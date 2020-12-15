@@ -1,8 +1,8 @@
 PROJECT ?= piraeus-ha-controller
 REGISTRY ?= quay.io/piraeusdatastore
 ARCH ?= amd64
-SEMVER ?= 0.0.0+$(shell git rev-parse --short HEAD)
-TAG ?= latest
+VERSION ?= $(shell git describe --tags --match "v*.*" HEAD)
+TAG ?= $(VERSION)
 NOCACHE ?= false
 
 help:
@@ -12,7 +12,7 @@ all: update upload
 
 .PHONY: update
 update:
-	docker build --build-arg=SEMVER=$(SEMVER) --build-arg=GOARCH=$(ARCH) --no-cache=$(NOCACHE) --pull=$(NOCACHE) -t $(PROJECT):$(TAG) .
+	docker build --build-arg=VERSION=$(VERSION) --build-arg=GOARCH=$(ARCH) --no-cache=$(NOCACHE) --pull=$(NOCACHE) -t $(PROJECT):$(TAG) .
 
 .PHONY: upload
 upload:

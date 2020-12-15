@@ -19,5 +19,5 @@ jobs:
           docker login --username=${DOCKER_USERNAME} --password-stdin quay.io <<< "${DOCKER_PASSWORD}"
       - name: push
         run: |
-          make update upload TAG="${{ github.ref }}" NOCACHE=true
+          make update upload NOCACHE=true
           make update upload TAG="latest" NOCACHE=false
