@@ -12,7 +12,7 @@ ARG GOOS=linux
 ARG GOARCH=amd64
 ARG VERSION=v0.0.0-0.unknown
 
-RUN CGO_ENABLED=0 go build -ldflags="-X github.com/piraeusdatastore/piraeus-ha-controller/cmd/piraeus-ha-controller.Version=${VERSION} -extldflags=-static"  -v ./cmd/...
+RUN CGO_ENABLED=0 go build -ldflags="-X github.com/piraeusdatastore/piraeus-ha-controller/pkg/consts.Version=${VERSION} -extldflags=-static"  -v ./cmd/...
 
 FROM scratch
 COPY --from=builder /src/piraeus-ha-controller /piraeus-ha-controller

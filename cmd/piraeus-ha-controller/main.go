@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 
+	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/consts"
 	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/hacontroller"
 	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/k8s"
 )
@@ -42,7 +43,7 @@ func main() {
 	args := parseArgs()
 
 	log.SetLevel(log.Level(args.loglevel))
-	log.WithField("version", Version).Infof("starting " + Name)
+	log.WithField("version", consts.Version).Infof("starting " + consts.Name)
 
 	ctx, cancel := ctxsignal.WithTermination(context.Background())
 	defer cancel()
@@ -81,7 +82,7 @@ func main() {
 		haControllerOpts = append(haControllerOpts, hacontroller.WithLeaderElector(leaderElector))
 	}
 
-	haController := hacontroller.NewHAController(Name, kubeClient, lostRUMonitor.C, haControllerOpts...)
+	haController := hacontroller.NewHAController(consts.Name, kubeClient, lostRUMonitor.C, haControllerOpts...)
 
 	err = haController.Run(ctx)
 	if err != nil {
@@ -95,14 +96,14 @@ func leaderElector(ctx context.Context, kubeClient kubernetes.Interface, identit
 		EventRecorder: recorder,
 	}
 
-	leaderElectionLock, err := resourcelock.New(resourcelock.LeasesResourceLock, namespace, Name, nil, kubeClient.CoordinationV1(), lockCfg)
+	leaderElectionLock, err := resourcelock.New(resourcelock.LeasesResourceLock, namespace, consts.Name, nil, kubeClient.CoordinationV1(), lockCfg)
 	if err != nil {
 		return nil, err
 	}
 
 	elector, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
 		Lock: leaderElectionLock,
-		Name: Name,
+		Name: consts.Name,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(_ context.Context) { log.Info("gained leader status") },
 			OnNewLeader:      func(identity string) { log.WithField("leader", identity).Info("new leader") },
@@ -145,7 +146,7 @@ func eventRecorder(kubeClient kubernetes.Interface) record.EventRecorder {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&v1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
-	source := corev1.EventSource{Component: Name}
+	source := corev1.EventSource{Component: consts.Name}
 	return broadcaster.NewRecorder(scheme.Scheme, source)
 }
 
@@ -154,11 +155,11 @@ func parseArgs() *args {
 
 	flag.Int32Var(&args.loglevel, "v", int32(log.InfoLevel), "set log level")
 	flag.StringVar(&args.kubeconfig, "kubeconfig", "", "path to kubeconfig file")
-	flag.DurationVar(&args.newResourceGracePeriod, "new-resource-grace-period", defaultNewResourceGracePeriod, "grace period for newly created resources after which promotable resources will be considered lost")
-	flag.DurationVar(&args.knownResourceGracePeriod, "known-resource-grace-period", defaultKnownResourceGracePeriod, "grace period for known resources after which promotable resources will be considered lost")
-	flag.DurationVar(&args.reconcileInterval, "reconcile-interval", defaultReconcileInterval, "time between reconciliation runs")
-	flag.StringVar(&args.podLabelSelector, "pod-label-selector", defaultPodLabelSelector, "labels selector for pods to consider")
-	flag.StringVar(&args.attacherName, "attacher-name", defaultAttacherName, "name of the attacher to consider")
+	flag.DurationVar(&args.newResourceGracePeriod, "new-resource-grace-period", consts.DefaultNewResourceGracePeriod, "grace period for newly created resources after which promotable resources will be considered lost")
+	flag.DurationVar(&args.knownResourceGracePeriod, "known-resource-grace-period", consts.DefaultKnownResourceGracePeriod, "grace period for known resources after which promotable resources will be considered lost")
+	flag.DurationVar(&args.reconcileInterval, "reconcile-interval", consts.DefaultReconcileInterval, "time between reconciliation runs")
+	flag.StringVar(&args.podLabelSelector, "pod-label-selector", consts.DefaultPodLabelSelector, "labels selector for pods to consider")
+	flag.StringVar(&args.attacherName, "attacher-name", consts.DefaultAttacherName, "name of the attacher to consider")
 	flag.BoolVar(&args.enableLeaderElection, "leader-election", false, "use kubernetes leader election")
 	flag.StringVar(&args.leaderElectionLeaseName, "leader-election-lease-name", "", "name for leader election lease (unique for each pod)")
 	flag.StringVar(&args.leaderElectionNamespace, "leader-election-namespace", "", "namespace for leader election")
