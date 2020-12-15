@@ -1,0 +1,22 @@
+name: build
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build images
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: login to registry
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          docker login --username=${DOCKER_USERNAME} --password-stdin quay.io <<< "${DOCKER_PASSWORD}"
+      - name: push
+        run: |
+          make update upload TAG="${{ github.ref }}" NOCACHE=true
