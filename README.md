@@ -1,5 +1,8 @@
 # Piraeus High Availability Controller
 
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/piraeusdatastore/piraeus-ha-controller)](https://github.com/piraeusdatastore/piraeus-ha-controller/releases)
+![tests](https://github.com/piraeusdatastore/piraeus-ha-controller/workflows/tests/badge.svg)
+
 The Piraeus High Availability Controller will speed up the fail over process for stateful workloads using [Piraeus] for
 storage.
 
@@ -16,7 +19,49 @@ The deployment will create:
 * All needed RBAC resources
 * A Deployment spawning 3 replicas of the Piraeus High Availability Controller, configured to connect to `http://piraeus-op-cs.default.svc`
 
-Copy the file, make any desired changes (see the options below) and apply via `kubectl apply -f deploy/all.yaml`.
+Copy the file, make any desired changes (see the [options](#options) below) and apply:
+
+```
+$ kubectl apply -f deploy/all.yaml
+namespace/ha-controller created
+deployment.apps/piraeus-ha-controller created
+serviceaccount/ha-controller created
+clusterrole.rbac.authorization.k8s.io/ha-controller created
+role.rbac.authorization.k8s.io/ha-controller created
+clusterrolebinding.rbac.authorization.k8s.io/ha-controller created
+rolebinding.rbac.authorization.k8s.io/ha-controller created
+$ kubectl -n ha-controller get pods
+NAME                                    READY   STATUS         RESTARTS   AGE
+piraeus-ha-controller-b7c848b89-bwb78   1/1     Running        0          20s
+piraeus-ha-controller-b7c848b89-ljwcn   1/1     Running        0          20s
+piraeus-ha-controller-b7c848b89-ml84m   1/1     Running        0          20s
+```
+
+### Deploy your stateful workloads
+
+To mark your stateful applications as managed by Piraeus, use the `linstor.csi.linbit.com/on-storage-lost: remove` label.
+For example, Pod Templates in a StatefulSet should look like:
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: my-stateful-app
+spec:
+  serviceName: my-stateful-app
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: my-stateful-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: my-stateful-app
+        linstor.csi.linbit.com/on-storage-lost: remove
+    ...
+```
+
+This way, the Piraeus High Availability Controller will not interfere with applications that do not benefit or even
+support it's primary use.
 
 ### Options
 

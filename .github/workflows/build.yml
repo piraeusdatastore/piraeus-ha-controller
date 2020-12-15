@@ -20,3 +20,4 @@ jobs:
       - name: push
         run: |
           make update upload TAG="${{ github.ref }}" NOCACHE=true
+          make update upload TAG="latest" NOCACHE=false
