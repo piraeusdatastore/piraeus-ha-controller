@@ -327,12 +327,12 @@ func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, erro
 
 	opts.ResourceVersion = initialVAs.ResourceVersion
 
-	pvcWatch, err := hac.kubeClient.CoreV1().PersistentVolumeClaims("").Watch(ctx, opts)
+	vaWatch, err := hac.kubeClient.StorageV1().VolumeAttachments().Watch(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	return pvcWatch.ResultChan(), err
+	return vaWatch.ResultChan(), err
 }
 
 func (hac *haController) handleVAWatchEvent(ev watch.Event) error {
