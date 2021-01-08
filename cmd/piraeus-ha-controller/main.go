@@ -26,17 +26,18 @@ import (
 )
 
 type args struct {
-	loglevel                  int32
-	kubeconfig                string
-	newResourceGracePeriod    time.Duration
-	knownResourceGracePeriod  time.Duration
-	reconcileInterval         time.Duration
-	podLabelSelector          string
-	attacherName              string
-	enableLeaderElection      bool
-	leaderElectionLeaseName   string
-	leaderElectionNamespace   string
-	leaderElectionHealthzPort int
+	loglevel                   int32
+	kubeconfig                 string
+	newResourceGracePeriod     time.Duration
+	knownResourceGracePeriod   time.Duration
+	reconcileInterval          time.Duration
+	podLabelSelector           string
+	attacherName               string
+	enableLeaderElection       bool
+	leaderElectionResourceName string
+	leaderElectionLeaseName    string
+	leaderElectionNamespace    string
+	leaderElectionHealthzPort  int
 }
 
 func main() {
@@ -75,7 +76,7 @@ func main() {
 	}
 
 	if args.enableLeaderElection {
-		leaderElector, err := leaderElector(ctx, kubeClient, args.leaderElectionLeaseName, args.leaderElectionNamespace, args.leaderElectionHealthzPort, recorder)
+		leaderElector, err := leaderElector(ctx, kubeClient, args.leaderElectionLeaseName, args.leaderElectionNamespace, args.leaderElectionResourceName, args.leaderElectionHealthzPort, recorder)
 		if err != nil {
 			log.WithError(err).Fatal("failed to create leader elector")
 		}
@@ -90,13 +91,13 @@ func main() {
 	}
 }
 
-func leaderElector(ctx context.Context, kubeClient kubernetes.Interface, identity, namespace string, healthPort int, recorder record.EventRecorder) (*leaderelection.LeaderElector, error) {
+func leaderElector(ctx context.Context, kubeClient kubernetes.Interface, identity, namespace, name string, healthPort int, recorder record.EventRecorder) (*leaderelection.LeaderElector, error) {
 	lockCfg := resourcelock.ResourceLockConfig{
 		Identity:      identity,
 		EventRecorder: recorder,
 	}
 
-	leaderElectionLock, err := resourcelock.New(resourcelock.LeasesResourceLock, namespace, consts.Name, nil, kubeClient.CoordinationV1(), lockCfg)
+	leaderElectionLock, err := resourcelock.New(resourcelock.LeasesResourceLock, namespace, name, nil, kubeClient.CoordinationV1(), lockCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +162,7 @@ func parseArgs() *args {
 	flag.StringVar(&args.podLabelSelector, "pod-label-selector", consts.DefaultPodLabelSelector, "labels selector for pods to consider")
 	flag.StringVar(&args.attacherName, "attacher-name", consts.DefaultAttacherName, "name of the attacher to consider")
 	flag.BoolVar(&args.enableLeaderElection, "leader-election", false, "use kubernetes leader election")
+	flag.StringVar(&args.leaderElectionResourceName, "leader-election-resource-name", consts.Name, "name for leader election resource")
 	flag.StringVar(&args.leaderElectionLeaseName, "leader-election-lease-name", "", "name for leader election lease (unique for each pod)")
 	flag.StringVar(&args.leaderElectionNamespace, "leader-election-namespace", "", "namespace for leader election")
 	flag.IntVar(&args.leaderElectionHealthzPort, "leader-election-healtz-port", 8080, "port to use for serving the /healthz endpoint")
