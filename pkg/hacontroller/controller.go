@@ -24,6 +24,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
@@ -97,6 +99,7 @@ func NewHAController(name string, kubeClient kubernetes.Interface, pvWithFailing
 		pvToPVC:                make(map[string]*corev1.PersistentVolumeClaim),
 		pvToVolumeAttachment:   make(map[string]*storagev1.VolumeAttachment),
 		pvWithFailingVA:        make(map[string]struct{}),
+		watchBackoff:           wait.NewExponentialBackoffManager(100*time.Millisecond, 20*time.Second, 1*time.Minute, 2.0, 1.0, &clock.RealClock{}),
 	}
 
 	for _, opt := range opts {
@@ -181,6 +184,7 @@ type haController struct {
 	podListOpts       metav1.ListOptions
 	evRecorder        record.EventRecorder
 	elector           LeaderElector
+	watchBackoff      wait.BackoffManager
 
 	// runtime values == basically our "state-of-the-world"
 	pvcToPod             map[types.NamespacedName]*corev1.Pod
@@ -190,7 +194,7 @@ type haController struct {
 }
 
 func (hac *haController) watchPods(ctx context.Context) (<-chan watch.Event, error) {
-	initialPods, err := hac.kubeClient.CoreV1().Pods("").List(ctx, hac.podListOpts)
+	initialPods, err := hac.kubeClient.CoreV1().Pods(metav1.NamespaceAll).List(ctx, hac.podListOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -199,20 +203,38 @@ func (hac *haController) watchPods(ctx context.Context) (<-chan watch.Event, err
 		hac.updateFromPod(&initialPods.Items[i])
 	}
 
-	hac.podListOpts.ResourceVersion = initialPods.ResourceVersion
+	watchOpts := hac.podListOpts.DeepCopy()
+	watchOpts.ResourceVersion = initialPods.ResourceVersion
 
-	podWatch, err := hac.kubeClient.CoreV1().Pods("").Watch(ctx, hac.podListOpts)
-	if err != nil {
-		return nil, err
+	watchChan := make(chan watch.Event)
+	podWatch := func() {
+		w, err := hac.kubeClient.CoreV1().Pods(metav1.NamespaceAll).Watch(ctx, *watchOpts)
+		if err != nil {
+			log.WithError(err).Info("Pod watch failed, restarting...")
+			return
+		}
+
+		defer w.Stop()
+
+		for item := range w.ResultChan() {
+			if item.Type == watch.Bookmark {
+				watchOpts.ResourceVersion = item.Object.(*corev1.PodList).ResourceVersion
+				continue
+			}
+
+			watchChan <- item
+		}
 	}
 
-	return podWatch.ResultChan(), nil
+	go wait.BackoffUntil(podWatch, hac.watchBackoff, true, ctx.Done())
+
+	return watchChan, nil
 }
 
 func (hac *haController) handlePodWatchEvent(ev watch.Event) error {
 	switch ev.Type {
 	case watch.Error:
-		return ev.Object.(error)
+		return fmt.Errorf("watch error: %v", ev.Object)
 	case watch.Added:
 		hac.updateFromPod(ev.Object.(*corev1.Pod))
 	case watch.Modified:
@@ -268,7 +290,7 @@ func (hac *haController) removeFromPod(pod *corev1.Pod) {
 
 func (hac *haController) watchPVCs(ctx context.Context) (<-chan watch.Event, error) {
 	opts := metav1.ListOptions{}
-	initialPVCs, err := hac.kubeClient.CoreV1().PersistentVolumeClaims("").List(ctx, opts)
+	initialPVCs, err := hac.kubeClient.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).List(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -279,18 +301,38 @@ func (hac *haController) watchPVCs(ctx context.Context) (<-chan watch.Event, err
 
 	opts.ResourceVersion = initialPVCs.ResourceVersion
 
-	pvcWatch, err := hac.kubeClient.CoreV1().PersistentVolumeClaims("").Watch(ctx, opts)
-	if err != nil {
-		return nil, err
+	watchOpts := hac.podListOpts.DeepCopy()
+	watchOpts.ResourceVersion = initialPVCs.ResourceVersion
+
+	watchChan := make(chan watch.Event)
+	pvcWatch := func() {
+		w, err := hac.kubeClient.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).Watch(ctx, *watchOpts)
+		if err != nil {
+			log.WithError(err).Info("PVC watch failed, restarting...")
+			return
+		}
+
+		defer w.Stop()
+
+		for item := range w.ResultChan() {
+			if item.Type == watch.Bookmark {
+				watchOpts.ResourceVersion = item.Object.(*corev1.PersistentVolumeClaim).ResourceVersion
+				continue
+			}
+
+			watchChan <- item
+		}
 	}
 
-	return pvcWatch.ResultChan(), err
+	go wait.BackoffUntil(pvcWatch, hac.watchBackoff, true, ctx.Done())
+
+	return watchChan, nil
 }
 
 func (hac *haController) handlePVCWatchEvent(ev watch.Event) error {
 	switch ev.Type {
 	case watch.Error:
-		return ev.Object.(error)
+		return fmt.Errorf("watch error: %v", ev.Object)
 	case watch.Added:
 		hac.updateFromPVC(ev.Object.(*corev1.PersistentVolumeClaim))
 	case watch.Modified:
@@ -325,20 +367,38 @@ func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, erro
 		hac.updateFromVA(&initialVAs.Items[i])
 	}
 
-	opts.ResourceVersion = initialVAs.ResourceVersion
+	watchOpts := hac.podListOpts.DeepCopy()
+	watchOpts.ResourceVersion = initialVAs.ResourceVersion
 
-	vaWatch, err := hac.kubeClient.StorageV1().VolumeAttachments().Watch(ctx, opts)
-	if err != nil {
-		return nil, err
+	watchChan := make(chan watch.Event)
+	vaWatch := func() {
+		w, err := hac.kubeClient.StorageV1().VolumeAttachments().Watch(ctx, *watchOpts)
+		if err != nil {
+			log.WithError(err).Info("VA watch failed, restarting...")
+			return
+		}
+
+		defer w.Stop()
+
+		for item := range w.ResultChan() {
+			if item.Type == watch.Bookmark {
+				watchOpts.ResourceVersion = item.Object.(*storagev1.VolumeAttachmentList).ResourceVersion
+				continue
+			}
+
+			watchChan <- item
+		}
 	}
 
-	return vaWatch.ResultChan(), err
+	go wait.BackoffUntil(vaWatch, hac.watchBackoff, true, ctx.Done())
+
+	return watchChan, nil
 }
 
 func (hac *haController) handleVAWatchEvent(ev watch.Event) error {
 	switch ev.Type {
 	case watch.Error:
-		return ev.Object.(error)
+		return fmt.Errorf("watch error: %v", ev.Object)
 	case watch.Added:
 		hac.updateFromVA(ev.Object.(*storagev1.VolumeAttachment))
 	case watch.Modified:
