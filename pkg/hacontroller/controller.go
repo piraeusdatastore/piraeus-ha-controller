@@ -14,18 +14,20 @@ package hacontroller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	log "github.com/sirupsen/logrus"
+
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 )
 
@@ -93,15 +95,73 @@ func NewHAController(name string, kubeClient kubernetes.Interface, pvWithFailing
 		kubeClient:             kubeClient,
 		pvWithFailingVAUpdates: pvWithFailingVAUpdates,
 		reconcileInterval:      defaultReconcileInterval,
-		pvcToPod:               make(map[types.NamespacedName]*corev1.Pod),
-		pvToPVC:                make(map[string]*corev1.PersistentVolumeClaim),
-		pvToVolumeAttachment:   make(map[string]*storagev1.VolumeAttachment),
+		pvcToPod:               cache.NewIndexer(cache.MetaNamespaceKeyFunc, map[string]cache.IndexFunc{}),
+		pvToPVC:                cache.NewIndexer(cache.MetaNamespaceKeyFunc, map[string]cache.IndexFunc{}),
+		pvToVolumeAttachment:   cache.NewIndexer(cache.MetaNamespaceKeyFunc, map[string]cache.IndexFunc{}),
 		pvWithFailingVA:        make(map[string]struct{}),
 	}
 
 	for _, opt := range opts {
 		opt(haController)
 	}
+
+	// Applied after controller options, as the indexers might depend on values on the haController instance
+	_ = haController.pvcToPod.AddIndexers(map[string]cache.IndexFunc{
+		"pvc": func(obj interface{}) ([]string, error) {
+			log.WithField("obj", obj).Trace("checking change in Pod")
+			pod, ok := obj.(*corev1.Pod)
+			if !ok {
+				return nil, errors.New(fmt.Sprintf("expected Pod, got object type: %T", obj))
+			}
+
+			var pvcs []string
+			for _, vol := range pod.Spec.Volumes {
+				if vol.PersistentVolumeClaim == nil {
+					continue
+				}
+
+				pvc := fmt.Sprintf("%s/%s", pod.Namespace, vol.PersistentVolumeClaim.ClaimName)
+				pvcs = append(pvcs, pvc)
+			}
+
+			log.WithFields(log.Fields{"name": pod.Name, "namespace": pod.Namespace, "keys": pvcs}).Debug("processed Pod change")
+			return pvcs, nil
+		},
+	})
+
+	_ = haController.pvToPVC.AddIndexers(map[string]cache.IndexFunc{
+		"pv": func(obj interface{}) ([]string, error) {
+			log.WithField("obj", obj).Trace("checking change in PersistentVolumeClaim")
+			pvc, ok := obj.(*corev1.PersistentVolumeClaim)
+			if !ok {
+				return nil, errors.New(fmt.Sprintf("expected PersistentVolumeClaim, got object type: %T", obj))
+			}
+
+			log.WithFields(log.Fields{"name": pvc.Name, "namespace": pvc.Namespace, "pv": pvc.Spec.VolumeName}).Debug("processed PersistentVolumeClaim change")
+			return []string{pvc.Spec.VolumeName}, nil
+		},
+	})
+
+	_ = haController.pvToVolumeAttachment.AddIndexers(map[string]cache.IndexFunc{
+		"pv": func(obj interface{}) ([]string, error) {
+			log.WithField("obj", obj).Trace("checking change in VolumeAttachment")
+			va, ok := obj.(*storagev1.VolumeAttachment)
+			if !ok {
+				return nil, errors.New(fmt.Sprintf("expected VolumeAttachment, got object type: %T", obj))
+			}
+
+			if haController.attacherName != "" && va.Spec.Attacher != haController.attacherName {
+				return nil, nil
+			}
+
+			if va.Spec.Source.PersistentVolumeName == nil {
+				return nil, nil
+			}
+
+			log.WithFields(log.Fields{"name": va.Name, "pv": *va.Spec.Source.PersistentVolumeName}).Debug("processed VolumeAttachment change")
+			return []string{*va.Spec.Source.PersistentVolumeName}, nil
+		},
+	})
 
 	return haController
 }
@@ -111,20 +171,9 @@ func NewHAController(name string, kubeClient kubernetes.Interface, pvWithFailing
 // This will listen for any updates on: Pods, PVCs, VolumeAttachments (VA) to keep
 // it's own "state of the world" up-to-date, without requiring a full re-query of all resources.
 func (hac *haController) Run(ctx context.Context) error {
-	podUpdates, err := hac.watchPods(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to set up pod watch: %w", err)
-	}
-
-	pvcUpdates, err := hac.watchPVCs(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to set up pvc watch: %w", err)
-	}
-
-	vaUpdates, err := hac.watchVAs(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to set up va watch: %w", err)
-	}
+	hac.startPodWatch(ctx)
+	hac.startPVCWatch(ctx)
+	hac.startVAWatch(ctx)
 
 	ticker := time.NewTicker(hac.reconcileInterval)
 	defer ticker.Stop()
@@ -136,21 +185,6 @@ func (hac *haController) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			log.Debug("context done")
 			return ctx.Err()
-		case podEv, ok := <-podUpdates:
-			if !ok {
-				return &unexpectedChannelClose{"pod updates"}
-			}
-			err = hac.handlePodWatchEvent(podEv)
-		case pvcEv, ok := <-pvcUpdates:
-			if !ok {
-				return &unexpectedChannelClose{"pvc updates"}
-			}
-			err = hac.handlePVCWatchEvent(pvcEv)
-		case vaEv, ok := <-vaUpdates:
-			if !ok {
-				return &unexpectedChannelClose{"va updates"}
-			}
-			err = hac.handleVAWatchEvent(vaEv)
 		case lost, ok := <-hac.pvWithFailingVAUpdates:
 			if !ok {
 				return &unexpectedChannelClose{"lost pv updates"}
@@ -183,206 +217,37 @@ type haController struct {
 	elector           LeaderElector
 
 	// runtime values == basically our "state-of-the-world"
-	pvcToPod             map[types.NamespacedName]*corev1.Pod
-	pvToPVC              map[string]*corev1.PersistentVolumeClaim
-	pvToVolumeAttachment map[string]*storagev1.VolumeAttachment
+	pvcToPod             cache.Indexer
+	pvToPVC              cache.Indexer
+	pvToVolumeAttachment cache.Indexer
 	pvWithFailingVA      map[string]struct{}
 }
 
-func (hac *haController) watchPods(ctx context.Context) (<-chan watch.Event, error) {
-	initialPods, err := hac.kubeClient.CoreV1().Pods("").List(ctx, hac.podListOpts)
-	if err != nil {
-		return nil, err
-	}
+func (hac *haController) startPodWatch(ctx context.Context) {
+	podListWatch := cache.NewFilteredListWatchFromClient(hac.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, func(options *metav1.ListOptions) {
+		options.LabelSelector = hac.podListOpts.LabelSelector
+		options.FieldSelector = hac.podListOpts.FieldSelector
+	})
 
-	for i := range initialPods.Items {
-		hac.updateFromPod(&initialPods.Items[i])
-	}
+	podReflector := cache.NewNamedReflector("pod-watcher", podListWatch, &corev1.Pod{}, hac.pvcToPod, 0)
 
-	hac.podListOpts.ResourceVersion = initialPods.ResourceVersion
-
-	podWatch, err := hac.kubeClient.CoreV1().Pods("").Watch(ctx, hac.podListOpts)
-	if err != nil {
-		return nil, err
-	}
-
-	return podWatch.ResultChan(), nil
+	go podReflector.Run(ctx.Done())
 }
 
-func (hac *haController) handlePodWatchEvent(ev watch.Event) error {
-	switch ev.Type {
-	case watch.Error:
-		return ev.Object.(error)
-	case watch.Added:
-		hac.updateFromPod(ev.Object.(*corev1.Pod))
-	case watch.Modified:
-		hac.updateFromPod(ev.Object.(*corev1.Pod))
-	case watch.Deleted:
-		hac.removeFromPod(ev.Object.(*corev1.Pod))
-	}
+func (hac *haController) startPVCWatch(ctx context.Context) {
+	pvcListWatch := cache.NewListWatchFromClient(hac.kubeClient.CoreV1().RESTClient(), "persistentvolumeclaims", metav1.NamespaceAll, fields.Everything())
 
-	return nil
+	pvcReflector := cache.NewNamedReflector("pvc-watcher", pvcListWatch, &corev1.PersistentVolumeClaim{}, hac.pvToPVC, 0)
+
+	go pvcReflector.Run(ctx.Done())
 }
 
-func (hac *haController) updateFromPod(pod *corev1.Pod) {
-	if pod.Status.Phase == corev1.PodPending {
-		// A pending pod is not yet bound and does not block volume detachment
-		return
-	}
+func (hac *haController) startVAWatch(ctx context.Context) {
+	vaListWatch := cache.NewListWatchFromClient(hac.kubeClient.StorageV1().RESTClient(), "volumeattachments", metav1.NamespaceNone, fields.Everything())
 
-	log.WithFields(log.Fields{"resource": "Pod", "name": pod.Name, "namespace": pod.Name}).Trace("update")
+	vaReflector := cache.NewNamedReflector("va-watcher", vaListWatch, &storagev1.VolumeAttachment{}, hac.pvToVolumeAttachment, 0)
 
-	for i := range pod.Spec.Volumes {
-		pvcRef := pod.Spec.Volumes[i].PersistentVolumeClaim
-		if pvcRef == nil {
-			continue
-		}
-
-		pvcName := types.NamespacedName{Name: pvcRef.ClaimName, Namespace: pod.Namespace}
-		hac.pvcToPod[pvcName] = pod
-	}
-}
-
-func (hac *haController) removeFromPod(pod *corev1.Pod) {
-	log.WithFields(log.Fields{"resource": "Pod", "name": pod.Name, "namespace": pod.Name}).Trace("remove")
-
-	for i := range pod.Spec.Volumes {
-		pvcRef := pod.Spec.Volumes[i].PersistentVolumeClaim
-		if pvcRef == nil {
-			continue
-		}
-
-		pvcName := types.NamespacedName{Name: pvcRef.ClaimName, Namespace: pod.Namespace}
-		currentPod, ok := hac.pvcToPod[pvcName]
-		if !ok {
-			continue
-		}
-
-		if currentPod.Name != pod.Name {
-			continue
-		}
-
-		delete(hac.pvcToPod, pvcName)
-	}
-}
-
-func (hac *haController) watchPVCs(ctx context.Context) (<-chan watch.Event, error) {
-	opts := metav1.ListOptions{}
-	initialPVCs, err := hac.kubeClient.CoreV1().PersistentVolumeClaims("").List(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range initialPVCs.Items {
-		hac.updateFromPVC(&initialPVCs.Items[i])
-	}
-
-	opts.ResourceVersion = initialPVCs.ResourceVersion
-
-	pvcWatch, err := hac.kubeClient.CoreV1().PersistentVolumeClaims("").Watch(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return pvcWatch.ResultChan(), err
-}
-
-func (hac *haController) handlePVCWatchEvent(ev watch.Event) error {
-	switch ev.Type {
-	case watch.Error:
-		return ev.Object.(error)
-	case watch.Added:
-		hac.updateFromPVC(ev.Object.(*corev1.PersistentVolumeClaim))
-	case watch.Modified:
-		hac.updateFromPVC(ev.Object.(*corev1.PersistentVolumeClaim))
-	case watch.Deleted:
-		hac.removeFromPVC(ev.Object.(*corev1.PersistentVolumeClaim))
-	}
-
-	return nil
-}
-
-func (hac *haController) updateFromPVC(pvc *corev1.PersistentVolumeClaim) {
-	log.WithFields(log.Fields{"resource": "PVC", "name": pvc.Name, "namespace": pvc.Name}).Trace("update")
-
-	hac.pvToPVC[pvc.Spec.VolumeName] = pvc
-}
-
-func (hac *haController) removeFromPVC(pvc *corev1.PersistentVolumeClaim) {
-	log.WithFields(log.Fields{"resource": "PVC", "name": pvc.Name, "namespace": pvc.Name}).Trace("remove")
-
-	delete(hac.pvToPVC, pvc.Spec.VolumeName)
-}
-
-func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, error) {
-	opts := metav1.ListOptions{}
-	initialVAs, err := hac.kubeClient.StorageV1().VolumeAttachments().List(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range initialVAs.Items {
-		hac.updateFromVA(&initialVAs.Items[i])
-	}
-
-	opts.ResourceVersion = initialVAs.ResourceVersion
-
-	vaWatch, err := hac.kubeClient.StorageV1().VolumeAttachments().Watch(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return vaWatch.ResultChan(), err
-}
-
-func (hac *haController) handleVAWatchEvent(ev watch.Event) error {
-	switch ev.Type {
-	case watch.Error:
-		return ev.Object.(error)
-	case watch.Added:
-		hac.updateFromVA(ev.Object.(*storagev1.VolumeAttachment))
-	case watch.Modified:
-		hac.updateFromVA(ev.Object.(*storagev1.VolumeAttachment))
-	case watch.Deleted:
-		hac.removeFromVA(ev.Object.(*storagev1.VolumeAttachment))
-	}
-
-	return nil
-}
-
-func (hac *haController) updateFromVA(va *storagev1.VolumeAttachment) {
-	if va.Spec.Source.PersistentVolumeName == nil {
-		return
-	}
-
-	// Skip if attacherName is given and does not match
-	if hac.attacherName != "" && va.Spec.Attacher != hac.attacherName {
-		return
-	}
-
-	log.WithFields(log.Fields{"resource": "VA", "name": va.Name}).Trace("update")
-
-	hac.pvToVolumeAttachment[*va.Spec.Source.PersistentVolumeName] = va
-}
-
-func (hac *haController) removeFromVA(va *storagev1.VolumeAttachment) {
-	if va.Spec.Source.PersistentVolumeName == nil {
-		return
-	}
-
-	currentVA, ok := hac.pvToVolumeAttachment[*va.Spec.Source.PersistentVolumeName]
-	if !ok {
-		return
-	}
-
-	if currentVA.Name != va.Name {
-		return
-	}
-
-	log.WithFields(log.Fields{"resource": "VA", "name": va.Name}).Trace("remove")
-
-	delete(hac.pvWithFailingVA, *va.Spec.Source.PersistentVolumeName)
-	delete(hac.pvToVolumeAttachment, *va.Spec.Source.PersistentVolumeName)
+	go vaReflector.Run(ctx.Done())
 }
 
 func (hac *haController) reconcile(ctx context.Context) {
@@ -415,17 +280,39 @@ func (hac *haController) removeFailingVolumeAttachments(ctx context.Context) []e
 
 		pvlog.Info("processing failing pv")
 		// Assumption: resource name == PV name
-		attachment, ok := hac.pvToVolumeAttachment[pvName]
-		if !ok {
+		vaObj, err := hac.pvToVolumeAttachment.ByIndex("pv", pvName)
+		if err != nil {
+			reconcileErrors = append(reconcileErrors, err)
+			continue
+		}
+
+		if len(vaObj) == 0 {
 			pvlog.Debug("PV without volume attachment, nothing to do")
 			reconciledVAs = append(reconciledVAs, pvName)
 			continue
 		}
 
-		pvc, ok := hac.pvToPVC[pvName]
+		attachment, ok := vaObj[0].(*storagev1.VolumeAttachment)
 		if !ok {
+			reconcileErrors = append(reconcileErrors, errors.New(fmt.Sprintf("expected VolumeAttachment, got object type: %T", vaObj)))
+			continue
+		}
+
+		pvcObj, err := hac.pvToPVC.ByIndex("pv", pvName)
+		if err != nil {
+			reconcileErrors = append(reconcileErrors, err)
+			continue
+		}
+
+		if len(pvcObj) == 0 {
 			pvlog.Debug("PV not associated to a PVC, nothing to do")
 			reconciledVAs = append(reconciledVAs, pvName)
+			continue
+		}
+
+		pvc, ok := pvcObj[0].(*corev1.PersistentVolumeClaim)
+		if !ok {
+			reconcileErrors = append(reconcileErrors, errors.New(fmt.Sprintf("expected PersistentVolumeClaim, got object type: %T", pvcObj)))
 			continue
 		}
 
@@ -434,8 +321,19 @@ func (hac *haController) removeFailingVolumeAttachments(ctx context.Context) []e
 			continue
 		}
 
-		pod, ok := hac.pvcToPod[types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}]
-		if ok {
+		podObj, err := hac.pvcToPod.ByIndex("pvc", fmt.Sprintf("%s/%s", pvc.Namespace, pvc.Name))
+		if err != nil {
+			reconcileErrors = append(reconcileErrors, err)
+			continue
+		}
+
+		if len(podObj) == 1 {
+			pod, ok := podObj[0].(*corev1.Pod)
+			if !ok {
+				reconcileErrors = append(reconcileErrors, errors.New(fmt.Sprintf("expected Pod, got object type: %T", podObj)))
+				continue
+			}
+
 			pvlog.WithField("pod", pod.ObjectMeta).Info("found pod associated with dead storage, will force delete")
 			err := hac.killPod(ctx, pod)
 			if err != nil {
@@ -443,14 +341,12 @@ func (hac *haController) removeFailingVolumeAttachments(ctx context.Context) []e
 				continue
 			}
 		}
-		hac.removeFromPVC(pvc)
 
-		err := hac.forceDetach(ctx, attachment)
+		err = hac.forceDetach(ctx, attachment)
 		if err != nil {
 			reconcileErrors = append(reconcileErrors, err)
 			continue
 		}
-		hac.removeFromVA(attachment)
 
 		reconciledVAs = append(reconciledVAs, pvName)
 	}
@@ -465,7 +361,7 @@ func (hac *haController) removeFailingVolumeAttachments(ctx context.Context) []e
 func (hac *haController) killPod(ctx context.Context, pod *corev1.Pod) error {
 	noGracePeriod := int64(0)
 	err := hac.kubeClient.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{GracePeriodSeconds: &noGracePeriod})
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 
@@ -477,7 +373,7 @@ func (hac *haController) killPod(ctx context.Context, pod *corev1.Pod) error {
 // Delete a VolumeAttachment.
 func (hac *haController) forceDetach(ctx context.Context, va *storagev1.VolumeAttachment) error {
 	err := hac.kubeClient.StorageV1().VolumeAttachments().Delete(ctx, va.Name, metav1.DeleteOptions{})
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 
