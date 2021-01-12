@@ -21,7 +21,7 @@ spec:
       serviceAccountName: ha-controller
       containers:
         - name: controller
-          image: quay.io/piraeusdatastore/piraeus-ha-controller:v0.1.1
+          image: quay.io/piraeusdatastore/piraeus-ha-controller:v0.1.2
           args:
             - --leader-election=true
             - --leader-election-lease-name=$(NAME)
