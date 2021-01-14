@@ -203,12 +203,14 @@ func (hac *haController) watchPods(ctx context.Context) (<-chan watch.Event, err
 		hac.updateFromPod(&initialPods.Items[i])
 	}
 
-	watchOpts := hac.podListOpts.DeepCopy()
+	watchOpts := *hac.podListOpts.DeepCopy()
 	watchOpts.ResourceVersion = initialPods.ResourceVersion
+	watchOpts.AllowWatchBookmarks = true
 
 	watchChan := make(chan watch.Event)
 	podWatch := func() {
-		w, err := hac.kubeClient.CoreV1().Pods(metav1.NamespaceAll).Watch(ctx, *watchOpts)
+		log.WithField("resource-version", watchOpts.ResourceVersion).Debug("(re-)starting Pod watch")
+		w, err := hac.kubeClient.CoreV1().Pods(metav1.NamespaceAll).Watch(ctx, watchOpts)
 		if err != nil {
 			log.WithError(err).Info("Pod watch failed, restarting...")
 			return
@@ -218,7 +220,8 @@ func (hac *haController) watchPods(ctx context.Context) (<-chan watch.Event, err
 
 		for item := range w.ResultChan() {
 			if item.Type == watch.Bookmark {
-				watchOpts.ResourceVersion = item.Object.(*corev1.PodList).ResourceVersion
+				watchOpts.ResourceVersion = item.Object.(*corev1.Pod).ResourceVersion
+				log.WithField("resource-version", watchOpts.ResourceVersion).Trace("Pod watch resource version updated")
 				continue
 			}
 
@@ -299,14 +302,14 @@ func (hac *haController) watchPVCs(ctx context.Context) (<-chan watch.Event, err
 		hac.updateFromPVC(&initialPVCs.Items[i])
 	}
 
-	opts.ResourceVersion = initialPVCs.ResourceVersion
-
-	watchOpts := hac.podListOpts.DeepCopy()
+	watchOpts := metav1.ListOptions{}
 	watchOpts.ResourceVersion = initialPVCs.ResourceVersion
+	watchOpts.AllowWatchBookmarks = true
 
 	watchChan := make(chan watch.Event)
 	pvcWatch := func() {
-		w, err := hac.kubeClient.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).Watch(ctx, *watchOpts)
+		log.WithField("resource-version", watchOpts.ResourceVersion).Debug("(re-)starting PVC watch")
+		w, err := hac.kubeClient.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).Watch(ctx, watchOpts)
 		if err != nil {
 			log.WithError(err).Info("PVC watch failed, restarting...")
 			return
@@ -317,6 +320,7 @@ func (hac *haController) watchPVCs(ctx context.Context) (<-chan watch.Event, err
 		for item := range w.ResultChan() {
 			if item.Type == watch.Bookmark {
 				watchOpts.ResourceVersion = item.Object.(*corev1.PersistentVolumeClaim).ResourceVersion
+				log.WithField("resource-version", watchOpts.ResourceVersion).Trace("PVC watch resource version updated")
 				continue
 			}
 
@@ -367,12 +371,14 @@ func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, erro
 		hac.updateFromVA(&initialVAs.Items[i])
 	}
 
-	watchOpts := hac.podListOpts.DeepCopy()
+	watchOpts := metav1.ListOptions{}
 	watchOpts.ResourceVersion = initialVAs.ResourceVersion
+	watchOpts.AllowWatchBookmarks = true
 
 	watchChan := make(chan watch.Event)
 	vaWatch := func() {
-		w, err := hac.kubeClient.StorageV1().VolumeAttachments().Watch(ctx, *watchOpts)
+		log.WithField("resource-version", watchOpts.ResourceVersion).Debug("(re-)starting VA watch")
+		w, err := hac.kubeClient.StorageV1().VolumeAttachments().Watch(ctx, watchOpts)
 		if err != nil {
 			log.WithError(err).Info("VA watch failed, restarting...")
 			return
@@ -382,7 +388,8 @@ func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, erro
 
 		for item := range w.ResultChan() {
 			if item.Type == watch.Bookmark {
-				watchOpts.ResourceVersion = item.Object.(*storagev1.VolumeAttachmentList).ResourceVersion
+				watchOpts.ResourceVersion = item.Object.(*storagev1.VolumeAttachment).ResourceVersion
+				log.WithField("resource-version", watchOpts.ResourceVersion).Trace("VA watch resource version updated")
 				continue
 			}
 
