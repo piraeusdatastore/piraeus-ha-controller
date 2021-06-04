@@ -15,6 +15,7 @@ package hacontroller
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -132,6 +133,8 @@ func (hac *haController) Run(ctx context.Context) error {
 	ticker := time.NewTicker(hac.reconcileInterval)
 	defer ticker.Stop()
 
+	var mux sync.Mutex
+
 	// Here we update our state-of-the-world and check if we we need to remove any failing volume attachments and pods
 	for {
 		var err error
@@ -143,23 +146,25 @@ func (hac *haController) Run(ctx context.Context) error {
 			if !ok {
 				return &unexpectedChannelClose{"pod updates"}
 			}
-			err = hac.handlePodWatchEvent(podEv)
+			err = hac.handlePodWatchEvent(podEv, &mux)
 		case pvcEv, ok := <-pvcUpdates:
 			if !ok {
 				return &unexpectedChannelClose{"pvc updates"}
 			}
-			err = hac.handlePVCWatchEvent(pvcEv)
+			err = hac.handlePVCWatchEvent(pvcEv, &mux)
 		case vaEv, ok := <-vaUpdates:
 			if !ok {
 				return &unexpectedChannelClose{"va updates"}
 			}
-			err = hac.handleVAWatchEvent(vaEv)
+			err = hac.handleVAWatchEvent(vaEv, &mux)
 		case lost, ok := <-hac.pvWithFailingVAUpdates:
 			if !ok {
 				return &unexpectedChannelClose{"lost pv updates"}
 			}
 			log.WithField("lostPV", lost).Trace("lost pv")
+			mux.Lock()
 			hac.pvWithFailingVA[lost] = struct{}{}
+			mux.Unlock()
 
 			hac.reconcile(ctx)
 		case <-ticker.C:
@@ -234,7 +239,8 @@ func (hac *haController) watchPods(ctx context.Context) (<-chan watch.Event, err
 	return watchChan, nil
 }
 
-func (hac *haController) handlePodWatchEvent(ev watch.Event) error {
+func (hac *haController) handlePodWatchEvent(ev watch.Event, mux *sync.Mutex) error {
+	mux.Lock()
 	switch ev.Type {
 	case watch.Error:
 		return fmt.Errorf("watch error: %v", ev.Object)
@@ -245,6 +251,7 @@ func (hac *haController) handlePodWatchEvent(ev watch.Event) error {
 	case watch.Deleted:
 		hac.removeFromPod(ev.Object.(*corev1.Pod))
 	}
+	mux.Unlock()
 
 	return nil
 }
@@ -333,7 +340,8 @@ func (hac *haController) watchPVCs(ctx context.Context) (<-chan watch.Event, err
 	return watchChan, nil
 }
 
-func (hac *haController) handlePVCWatchEvent(ev watch.Event) error {
+func (hac *haController) handlePVCWatchEvent(ev watch.Event, mux *sync.Mutex) error {
+	mux.Lock()
 	switch ev.Type {
 	case watch.Error:
 		return fmt.Errorf("watch error: %v", ev.Object)
@@ -344,6 +352,7 @@ func (hac *haController) handlePVCWatchEvent(ev watch.Event) error {
 	case watch.Deleted:
 		hac.removeFromPVC(ev.Object.(*corev1.PersistentVolumeClaim))
 	}
+	mux.Unlock()
 
 	return nil
 }
@@ -402,7 +411,8 @@ func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, erro
 	return watchChan, nil
 }
 
-func (hac *haController) handleVAWatchEvent(ev watch.Event) error {
+func (hac *haController) handleVAWatchEvent(ev watch.Event, mux *sync.Mutex) error {
+	mux.Lock()
 	switch ev.Type {
 	case watch.Error:
 		return fmt.Errorf("watch error: %v", ev.Object)
@@ -413,6 +423,7 @@ func (hac *haController) handleVAWatchEvent(ev watch.Event) error {
 	case watch.Deleted:
 		hac.removeFromVA(ev.Object.(*storagev1.VolumeAttachment))
 	}
+	mux.Unlock()
 
 	return nil
 }
