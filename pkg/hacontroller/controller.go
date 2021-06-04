@@ -240,23 +240,21 @@ func (hac *haController) watchPods(ctx context.Context) (<-chan watch.Event, err
 }
 
 func (hac *haController) handlePodWatchEvent(ev watch.Event, mux *sync.Mutex) error {
-	mux.Lock()
 	switch ev.Type {
 	case watch.Error:
 		return fmt.Errorf("watch error: %v", ev.Object)
 	case watch.Added:
-		hac.updateFromPod(ev.Object.(*corev1.Pod))
+		hac.updateFromPod(ev.Object.(*corev1.Pod), mux)
 	case watch.Modified:
-		hac.updateFromPod(ev.Object.(*corev1.Pod))
+		hac.updateFromPod(ev.Object.(*corev1.Pod), mux)
 	case watch.Deleted:
-		hac.removeFromPod(ev.Object.(*corev1.Pod))
+		hac.removeFromPod(ev.Object.(*corev1.Pod), mux)
 	}
-	mux.Unlock()
 
 	return nil
 }
 
-func (hac *haController) updateFromPod(pod *corev1.Pod) {
+func (hac *haController) updateFromPod(pod *corev1.Pod, mux *sync.Mutex) {
 	if pod.Status.Phase == corev1.PodPending {
 		// A pending pod is not yet bound and does not block volume detachment
 		return
@@ -271,11 +269,13 @@ func (hac *haController) updateFromPod(pod *corev1.Pod) {
 		}
 
 		pvcName := types.NamespacedName{Name: pvcRef.ClaimName, Namespace: pod.Namespace}
+		mux.Lock()
 		hac.pvcToPod[pvcName] = pod
+		mux.Unlock()
 	}
 }
 
-func (hac *haController) removeFromPod(pod *corev1.Pod) {
+func (hac *haController) removeFromPod(pod *corev1.Pod, mux *sync.Mutex) {
 	log.WithFields(log.Fields{"resource": "Pod", "name": pod.Name, "namespace": pod.Name}).Trace("remove")
 
 	for i := range pod.Spec.Volumes {
@@ -294,7 +294,9 @@ func (hac *haController) removeFromPod(pod *corev1.Pod) {
 			continue
 		}
 
+		mux.Lock()
 		delete(hac.pvcToPod, pvcName)
+		mux.Unlock()
 	}
 }
 
@@ -341,32 +343,34 @@ func (hac *haController) watchPVCs(ctx context.Context) (<-chan watch.Event, err
 }
 
 func (hac *haController) handlePVCWatchEvent(ev watch.Event, mux *sync.Mutex) error {
-	mux.Lock()
 	switch ev.Type {
 	case watch.Error:
 		return fmt.Errorf("watch error: %v", ev.Object)
 	case watch.Added:
-		hac.updateFromPVC(ev.Object.(*corev1.PersistentVolumeClaim))
+		hac.updateFromPVC(ev.Object.(*corev1.PersistentVolumeClaim), mux)
 	case watch.Modified:
-		hac.updateFromPVC(ev.Object.(*corev1.PersistentVolumeClaim))
+		hac.updateFromPVC(ev.Object.(*corev1.PersistentVolumeClaim), mux)
 	case watch.Deleted:
-		hac.removeFromPVC(ev.Object.(*corev1.PersistentVolumeClaim))
+		hac.removeFromPVC(ev.Object.(*corev1.PersistentVolumeClaim), mux)
 	}
-	mux.Unlock()
 
 	return nil
 }
 
-func (hac *haController) updateFromPVC(pvc *corev1.PersistentVolumeClaim) {
+func (hac *haController) updateFromPVC(pvc *corev1.PersistentVolumeClaim, mux *sync.Mutex) {
 	log.WithFields(log.Fields{"resource": "PVC", "name": pvc.Name, "namespace": pvc.Name}).Trace("update")
 
+	mux.Lock()
 	hac.pvToPVC[pvc.Spec.VolumeName] = pvc
+	mux.Unlock()
 }
 
-func (hac *haController) removeFromPVC(pvc *corev1.PersistentVolumeClaim) {
+func (hac *haController) removeFromPVC(pvc *corev1.PersistentVolumeClaim, mux *sync.Mutex) {
 	log.WithFields(log.Fields{"resource": "PVC", "name": pvc.Name, "namespace": pvc.Name}).Trace("remove")
 
+	mux.Lock()
 	delete(hac.pvToPVC, pvc.Spec.VolumeName)
+	mux.Unlock()
 }
 
 func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, error) {
@@ -412,23 +416,21 @@ func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, erro
 }
 
 func (hac *haController) handleVAWatchEvent(ev watch.Event, mux *sync.Mutex) error {
-	mux.Lock()
 	switch ev.Type {
 	case watch.Error:
 		return fmt.Errorf("watch error: %v", ev.Object)
 	case watch.Added:
-		hac.updateFromVA(ev.Object.(*storagev1.VolumeAttachment))
+		hac.updateFromVA(ev.Object.(*storagev1.VolumeAttachment), mux)
 	case watch.Modified:
-		hac.updateFromVA(ev.Object.(*storagev1.VolumeAttachment))
+		hac.updateFromVA(ev.Object.(*storagev1.VolumeAttachment), mux)
 	case watch.Deleted:
-		hac.removeFromVA(ev.Object.(*storagev1.VolumeAttachment))
+		hac.removeFromVA(ev.Object.(*storagev1.VolumeAttachment), mux)
 	}
-	mux.Unlock()
 
 	return nil
 }
 
-func (hac *haController) updateFromVA(va *storagev1.VolumeAttachment) {
+func (hac *haController) updateFromVA(va *storagev1.VolumeAttachment, mux *sync.Mutex) {
 	if va.Spec.Source.PersistentVolumeName == nil {
 		return
 	}
@@ -440,10 +442,12 @@ func (hac *haController) updateFromVA(va *storagev1.VolumeAttachment) {
 
 	log.WithFields(log.Fields{"resource": "VA", "name": va.Name}).Trace("update")
 
+	mux.Lock()
 	hac.pvToVolumeAttachment[*va.Spec.Source.PersistentVolumeName] = va
+	mux.Unlock()
 }
 
-func (hac *haController) removeFromVA(va *storagev1.VolumeAttachment) {
+func (hac *haController) removeFromVA(va *storagev1.VolumeAttachment, mux *sync.Mutex) {
 	if va.Spec.Source.PersistentVolumeName == nil {
 		return
 	}
@@ -459,8 +463,10 @@ func (hac *haController) removeFromVA(va *storagev1.VolumeAttachment) {
 
 	log.WithFields(log.Fields{"resource": "VA", "name": va.Name}).Trace("remove")
 
+	mux.Lock()
 	delete(hac.pvWithFailingVA, *va.Spec.Source.PersistentVolumeName)
 	delete(hac.pvToVolumeAttachment, *va.Spec.Source.PersistentVolumeName)
+	mux.Unlock()
 }
 
 func (hac *haController) reconcile(ctx context.Context) {
