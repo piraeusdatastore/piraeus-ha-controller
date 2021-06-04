@@ -15,6 +15,7 @@ package hacontroller
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -159,7 +160,9 @@ func (hac *haController) Run(ctx context.Context) error {
 				return &unexpectedChannelClose{"lost pv updates"}
 			}
 			log.WithField("lostPV", lost).Trace("lost pv")
+			hac.mutex.Lock()
 			hac.pvWithFailingVA[lost] = struct{}{}
+			hac.mutex.Unlock()
 
 			hac.reconcile(ctx)
 		case <-ticker.C:
@@ -191,6 +194,7 @@ type haController struct {
 	pvToPVC              map[string]*corev1.PersistentVolumeClaim
 	pvToVolumeAttachment map[string]*storagev1.VolumeAttachment
 	pvWithFailingVA      map[string]struct{}
+	mutex                sync.Mutex
 }
 
 func (hac *haController) watchPods(ctx context.Context) (<-chan watch.Event, error) {
@@ -264,7 +268,9 @@ func (hac *haController) updateFromPod(pod *corev1.Pod) {
 		}
 
 		pvcName := types.NamespacedName{Name: pvcRef.ClaimName, Namespace: pod.Namespace}
+		hac.mutex.Lock()
 		hac.pvcToPod[pvcName] = pod
+		hac.mutex.Unlock()
 	}
 }
 
@@ -287,7 +293,9 @@ func (hac *haController) removeFromPod(pod *corev1.Pod) {
 			continue
 		}
 
+		hac.mutex.Lock()
 		delete(hac.pvcToPod, pvcName)
+		hac.mutex.Unlock()
 	}
 }
 
@@ -351,13 +359,17 @@ func (hac *haController) handlePVCWatchEvent(ev watch.Event) error {
 func (hac *haController) updateFromPVC(pvc *corev1.PersistentVolumeClaim) {
 	log.WithFields(log.Fields{"resource": "PVC", "name": pvc.Name, "namespace": pvc.Name}).Trace("update")
 
+	hac.mutex.Lock()
 	hac.pvToPVC[pvc.Spec.VolumeName] = pvc
+	hac.mutex.Unlock()
 }
 
 func (hac *haController) removeFromPVC(pvc *corev1.PersistentVolumeClaim) {
 	log.WithFields(log.Fields{"resource": "PVC", "name": pvc.Name, "namespace": pvc.Name}).Trace("remove")
 
+	hac.mutex.Lock()
 	delete(hac.pvToPVC, pvc.Spec.VolumeName)
+	hac.mutex.Unlock()
 }
 
 func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, error) {
@@ -429,7 +441,9 @@ func (hac *haController) updateFromVA(va *storagev1.VolumeAttachment) {
 
 	log.WithFields(log.Fields{"resource": "VA", "name": va.Name}).Trace("update")
 
+	hac.mutex.Lock()
 	hac.pvToVolumeAttachment[*va.Spec.Source.PersistentVolumeName] = va
+	hac.mutex.Unlock()
 }
 
 func (hac *haController) removeFromVA(va *storagev1.VolumeAttachment) {
@@ -448,8 +462,10 @@ func (hac *haController) removeFromVA(va *storagev1.VolumeAttachment) {
 
 	log.WithFields(log.Fields{"resource": "VA", "name": va.Name}).Trace("remove")
 
+	hac.mutex.Lock()
 	delete(hac.pvWithFailingVA, *va.Spec.Source.PersistentVolumeName)
 	delete(hac.pvToVolumeAttachment, *va.Spec.Source.PersistentVolumeName)
+	hac.mutex.Unlock()
 }
 
 func (hac *haController) reconcile(ctx context.Context) {
