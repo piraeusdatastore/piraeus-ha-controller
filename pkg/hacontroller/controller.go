@@ -115,25 +115,24 @@ func NewHAController(name string, kubeClient kubernetes.Interface, pvWithFailing
 // This will listen for any updates on: Pods, PVCs, VolumeAttachments (VA) to keep
 // it's own "state of the world" up-to-date, without requiring a full re-query of all resources.
 func (hac *haController) Run(ctx context.Context) error {
-	podUpdates, err := hac.watchPods(ctx)
+	var mux sync.Mutex
+	podUpdates, err := hac.watchPods(ctx, &mux)
 	if err != nil {
 		return fmt.Errorf("failed to set up pod watch: %w", err)
 	}
 
-	pvcUpdates, err := hac.watchPVCs(ctx)
+	pvcUpdates, err := hac.watchPVCs(ctx, &mux)
 	if err != nil {
 		return fmt.Errorf("failed to set up pvc watch: %w", err)
 	}
 
-	vaUpdates, err := hac.watchVAs(ctx)
+	vaUpdates, err := hac.watchVAs(ctx, &mux)
 	if err != nil {
 		return fmt.Errorf("failed to set up va watch: %w", err)
 	}
 
 	ticker := time.NewTicker(hac.reconcileInterval)
 	defer ticker.Stop()
-
-	var mux sync.Mutex
 
 	// Here we update our state-of-the-world and check if we we need to remove any failing volume attachments and pods
 	for {
@@ -166,9 +165,9 @@ func (hac *haController) Run(ctx context.Context) error {
 			hac.pvWithFailingVA[lost] = struct{}{}
 			mux.Unlock()
 
-			hac.reconcile(ctx)
+			hac.reconcile(ctx, &mux)
 		case <-ticker.C:
-			hac.reconcile(ctx)
+			hac.reconcile(ctx, &mux)
 		}
 
 		if err != nil {
@@ -198,14 +197,14 @@ type haController struct {
 	pvWithFailingVA      map[string]struct{}
 }
 
-func (hac *haController) watchPods(ctx context.Context) (<-chan watch.Event, error) {
+func (hac *haController) watchPods(ctx context.Context, mux *sync.Mutex) (<-chan watch.Event, error) {
 	initialPods, err := hac.kubeClient.CoreV1().Pods(metav1.NamespaceAll).List(ctx, hac.podListOpts)
 	if err != nil {
 		return nil, err
 	}
 
 	for i := range initialPods.Items {
-		hac.updateFromPod(&initialPods.Items[i])
+		hac.updateFromPod(&initialPods.Items[i], mux)
 	}
 
 	watchOpts := *hac.podListOpts.DeepCopy()
@@ -300,7 +299,7 @@ func (hac *haController) removeFromPod(pod *corev1.Pod, mux *sync.Mutex) {
 	}
 }
 
-func (hac *haController) watchPVCs(ctx context.Context) (<-chan watch.Event, error) {
+func (hac *haController) watchPVCs(ctx context.Context, mux *sync.Mutex) (<-chan watch.Event, error) {
 	opts := metav1.ListOptions{}
 	initialPVCs, err := hac.kubeClient.CoreV1().PersistentVolumeClaims(metav1.NamespaceAll).List(ctx, opts)
 	if err != nil {
@@ -308,7 +307,7 @@ func (hac *haController) watchPVCs(ctx context.Context) (<-chan watch.Event, err
 	}
 
 	for i := range initialPVCs.Items {
-		hac.updateFromPVC(&initialPVCs.Items[i])
+		hac.updateFromPVC(&initialPVCs.Items[i], mux)
 	}
 
 	watchOpts := metav1.ListOptions{}
@@ -373,7 +372,7 @@ func (hac *haController) removeFromPVC(pvc *corev1.PersistentVolumeClaim, mux *s
 	mux.Unlock()
 }
 
-func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, error) {
+func (hac *haController) watchVAs(ctx context.Context, mux *sync.Mutex) (<-chan watch.Event, error) {
 	opts := metav1.ListOptions{}
 	initialVAs, err := hac.kubeClient.StorageV1().VolumeAttachments().List(ctx, opts)
 	if err != nil {
@@ -381,7 +380,7 @@ func (hac *haController) watchVAs(ctx context.Context) (<-chan watch.Event, erro
 	}
 
 	for i := range initialVAs.Items {
-		hac.updateFromVA(&initialVAs.Items[i])
+		hac.updateFromVA(&initialVAs.Items[i], mux)
 	}
 
 	watchOpts := metav1.ListOptions{}
@@ -469,9 +468,9 @@ func (hac *haController) removeFromVA(va *storagev1.VolumeAttachment, mux *sync.
 	mux.Unlock()
 }
 
-func (hac *haController) reconcile(ctx context.Context) {
+func (hac *haController) reconcile(ctx context.Context, mux *sync.Mutex) {
 	log.Trace("start reconciling failing volume attachments")
-	errs := hac.removeFailingVolumeAttachments(ctx)
+	errs := hac.removeFailingVolumeAttachments(ctx, mux)
 	if len(errs) != 0 {
 		// These are "expected errors", in the sense that we can retry the operation again at a later time.
 		// No reason to stop the loop here...
@@ -484,7 +483,7 @@ func (hac *haController) reconcile(ctx context.Context) {
 //
 // This takes the current "state-of-the-world" and the set of "failing PVs" and tries to delete the associated
 // resources (if any).
-func (hac *haController) removeFailingVolumeAttachments(ctx context.Context) []error {
+func (hac *haController) removeFailingVolumeAttachments(ctx context.Context, mux *sync.Mutex) []error {
 	var reconcileErrors []error
 	var reconciledVAs []string
 	defer func() {
@@ -527,14 +526,14 @@ func (hac *haController) removeFailingVolumeAttachments(ctx context.Context) []e
 				continue
 			}
 		}
-		hac.removeFromPVC(pvc)
+		hac.removeFromPVC(pvc, mux)
 
 		err := hac.forceDetach(ctx, attachment)
 		if err != nil {
 			reconcileErrors = append(reconcileErrors, err)
 			continue
 		}
-		hac.removeFromVA(attachment)
+		hac.removeFromVA(attachment, mux)
 
 		reconciledVAs = append(reconciledVAs, pvName)
 	}
