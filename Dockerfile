@@ -9,7 +9,6 @@ COPY cmd /src/cmd
 COPY pkg /src/pkg
 
 ARG GOOS=linux
-ARG GOARCH=amd64
 ARG VERSION=v0.0.0-0.unknown
 
 RUN CGO_ENABLED=0 go build -ldflags="-X github.com/piraeusdatastore/piraeus-ha-controller/pkg/consts.Version=${VERSION} -extldflags=-static"  -v ./cmd/...
