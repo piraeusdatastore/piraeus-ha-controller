@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Build for arm64. [#9]
+
+[#9]: https://github.com/piraeusdatastore/piraeus-ha-controller/pull/9
+
+### Changed
+- Update golang dependencies to kubernetes 1.22.
+- Use `gcr.io/distroless/static` base image and run as non-root user.
+
 ## [0.1.3] - 2021-01-14
 ### Added
 - This changelog
