@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os/signal"
+	"syscall"
 	"time"
 
 	lclient "github.com/LINBIT/golinstor/client"
 	lmonitor "github.com/LINBIT/golinstor/monitor"
-	"github.com/henvic/ctxsignal"
 	log "github.com/sirupsen/logrus"
 	flag "github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
@@ -46,7 +47,7 @@ func main() {
 	log.SetLevel(log.Level(args.loglevel))
 	log.WithField("version", consts.Version).Infof("starting " + consts.Name)
 
-	ctx, cancel := ctxsignal.WithTermination(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	kubeClient, err := k8s.Clientset(args.kubeconfig)
