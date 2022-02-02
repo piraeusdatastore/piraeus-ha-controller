@@ -19,6 +19,15 @@ spec:
         app.kubernetes.io/name: piraeus-ha-controller
     spec:
       serviceAccountName: ha-controller
+      initContainers:
+        - name: wait-for-linstor
+          image: quay.io/piraeusdatastore/piraeus-ha-controller:v0.2.0
+          command:
+            - /linstor-wait-until
+            - api-online
+          env:
+            - name: LS_CONTROLLERS
+              value: http://piraeus-op-cs.default.svc:3370
       containers:
         - name: controller
           image: quay.io/piraeusdatastore/piraeus-ha-controller:v0.2.0
