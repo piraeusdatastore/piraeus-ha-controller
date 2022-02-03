@@ -21,7 +21,7 @@ spec:
       serviceAccountName: ha-controller
       initContainers:
         - name: wait-for-linstor
-          image: quay.io/piraeusdatastore/piraeus-ha-controller:v0.2.0
+          image: quay.io/piraeusdatastore/piraeus-ha-controller:v0.3.0
           command:
             - /linstor-wait-until
             - api-online
@@ -30,7 +30,7 @@ spec:
               value: http://piraeus-op-cs.default.svc:3370
       containers:
         - name: controller
-          image: quay.io/piraeusdatastore/piraeus-ha-controller:v0.2.0
+          image: quay.io/piraeusdatastore/piraeus-ha-controller:v0.3.0
           args:
             - --leader-election=true
             - --leader-election-lease-name=$(NAME)

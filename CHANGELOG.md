@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2022-02-03
+
+### Added
+- Include [`linstor-wait-until`](https://github.com/LINBIT/linstor-wait-until) in docker image. It is used to wait
+  for the LINSTOR API to get ready on pod initialization.
+
 ## [0.2.0] - 2021-08-31
 
 ### Added
@@ -50,7 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.1.1...v0.1.2
