@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -17,7 +19,7 @@ func NewAgentCommand() *cobra.Command {
 	cfgflags := genericclioptions.NewConfigFlags(false)
 	var drbdStatusInterval, reconcileInterval, resyncInterval, operationsTimeout, failOverTimeout time.Duration
 	var deletionGraceSeconds int64
-	var nodeName string
+	var nodeName, healthzBindAddress string
 
 	cmd := &cobra.Command{
 		Use:     "node-agent",
@@ -45,6 +47,20 @@ func NewAgentCommand() *cobra.Command {
 				return err
 			}
 
+			if healthzBindAddress != "" {
+				listener, err := net.Listen("tcp", healthzBindAddress)
+				if err != nil {
+					return err
+				}
+
+				mux := &http.ServeMux{}
+				mux.HandleFunc("/healthz", func(writer http.ResponseWriter, request *http.Request) {
+					ag.Healtz(writer)
+				})
+
+				go http.Serve(listener, mux)
+			}
+
 			return ag.Run(ctx)
 		},
 	}
@@ -57,6 +73,7 @@ func NewAgentCommand() *cobra.Command {
 	cmd.Flags().DurationVar(&resyncInterval, "resync-interval", 15*time.Minute, "how often the internal object cache should be resynchronized")
 	cmd.Flags().Int64Var(&deletionGraceSeconds, "grace-period-seconds", 10, "default grace period for deleting k8s objects, in seconds")
 	cmd.Flags().StringVar(&nodeName, "node-name", os.Getenv("NODE_NAME"), "the name of node this is running on. defaults to the NODE_NAME environment variable")
+	cmd.Flags().StringVar(&healthzBindAddress, "health-bind-address", ":8000", "the address to bind to for the /healthz endpoint")
 	return cmd
 }
 

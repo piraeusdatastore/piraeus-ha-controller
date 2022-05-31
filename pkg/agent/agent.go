@@ -10,6 +10,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -73,6 +74,9 @@ type agent struct {
 	nodeInformer    cache.SharedIndexInformer
 	client          kubernetes.Interface
 	broadcaster     events.EventBroadcaster
+
+	mu                 sync.Mutex
+	lastReconcileStart time.Time
 }
 
 func NewAgent(opt *Options) (*agent, error) {
@@ -207,6 +211,11 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 	klog.V(1).Info("starting reconciliation")
 
 	now := time.Now()
+
+	a.mu.Lock()
+	a.lastReconcileStart = now
+	a.mu.Unlock()
+
 	resourceState := a.drbdResources.Get()
 
 	var wg sync.WaitGroup
@@ -260,6 +269,26 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 	wg.Wait()
 
 	return nil
+}
+
+func (a *agent) Healtz(writer http.ResponseWriter) {
+	a.mu.Lock()
+	sinceLastReconcile := time.Now().Sub(a.lastReconcileStart)
+	a.mu.Unlock()
+
+	if sinceLastReconcile > a.Timeout()+a.ReconcileInterval {
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = writer.Write([]byte(fmt.Sprintf("too long since last update: %fs", sinceLastReconcile.Seconds())))
+		return
+	}
+
+	if !a.pvInformer.HasSynced() || !a.podInformer.HasSynced() || !a.vaInformer.HasSynced() || !a.nodeInformer.HasSynced() {
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = writer.Write([]byte("informers not synced"))
+		return
+	}
+
+	_, _ = writer.Write([]byte("ok"))
 }
 
 // ManageOwnTaints ensures that the taints on the local node are up to date:
