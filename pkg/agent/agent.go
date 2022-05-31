@@ -151,6 +151,8 @@ func NewAgent(opt *Options) (*agent, error) {
 		Options:         opt,
 		reconcilers: []Reconciler{
 			NewFailoverReconciler(opt, client),
+			NewSuspendedPodReconciler(opt),
+			NewForceIoErrorReconciler(opt, client),
 		},
 	}, nil
 }
