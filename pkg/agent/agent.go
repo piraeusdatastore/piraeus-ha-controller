@@ -149,7 +149,9 @@ func NewAgent(opt *Options) (*agent, error) {
 		client:          client,
 		broadcaster:     broadcaster,
 		Options:         opt,
-		reconcilers:     []Reconciler{},
+		reconcilers: []Reconciler{
+			NewFailoverReconciler(opt, client),
+		},
 	}, nil
 }
 
