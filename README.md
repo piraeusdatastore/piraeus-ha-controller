@@ -3,65 +3,31 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/piraeusdatastore/piraeus-ha-controller)](https://github.com/piraeusdatastore/piraeus-ha-controller/releases)
 ![tests](https://github.com/piraeusdatastore/piraeus-ha-controller/workflows/tests/badge.svg)
 
-The Piraeus High Availability Controller will speed up the fail over process for stateful workloads using [Piraeus] for
+The Piraeus High Availability Controller will speed up the fail-over process for stateful workloads using [Piraeus] for
 storage.
 
 [Piraeus]: https://piraeus.io
 
 ## Get started
 
-The Piraeus High Availability Controller can be deployed as part of the [Piraeus Operator].
-
-If you want to get started directly with an existing Piraeus setup, check out the [single file deployment](./deploy/all.yaml)
-The deployment will create:
-
-* A namespace `ha-controller`
-* All needed RBAC resources
-* A Deployment spawning 3 replicas of the Piraeus High Availability Controller, configured to connect to `http://piraeus-op-cs.default.svc`
-
-Copy the file, make any desired changes (see the [options](#options) below) and apply:
+The Piraeus High Availability Controller can be deployed through a helm chart.
 
 ```
-$ kubectl apply -f deploy/all.yaml
-namespace/ha-controller created
-deployment.apps/piraeus-ha-controller created
-serviceaccount/ha-controller created
-clusterrole.rbac.authorization.k8s.io/ha-controller created
-role.rbac.authorization.k8s.io/ha-controller created
-clusterrolebinding.rbac.authorization.k8s.io/ha-controller created
-rolebinding.rbac.authorization.k8s.io/ha-controller created
-$ kubectl -n ha-controller get pods
-NAME                                    READY   STATUS         RESTARTS   AGE
-piraeus-ha-controller-b7c848b89-bwb78   1/1     Running        0          20s
-piraeus-ha-controller-b7c848b89-ljwcn   1/1     Running        0          20s
-piraeus-ha-controller-b7c848b89-ml84m   1/1     Running        0          20s
+$ helm install --create-namespace --namespace piraeus-ha-controller piraeus-ha-controller charts/piraeus-ha-controller
 ```
 
-### Deploy your stateful workloads
+The high availability controller will automatically watch all pods and volumes and start the fail-over process
+should it detect any issues.
 
-To mark your stateful applications as managed by Piraeus, use the `linstor.csi.linbit.com/on-storage-lost: remove` label.
-For example, Pod Templates in a StatefulSet should look like:
+While not strictly necessary, we recommend using DRBD 9.1.7 or newer and the following settings in your StorageClass:
 
-```yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: my-stateful-app
-spec:
-  serviceName: my-stateful-app
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: my-stateful-app
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: my-stateful-app
-        linstor.csi.linbit.com/on-storage-lost: remove
-    ...
 ```
-
-This way, the Piraeus High Availability Controller will not interfere with applications that do not benefit or even
-support it's primary use.
+parameters:
+  property.linstor.csi.linbit.com/DrbdOptions/auto-quorum: suspend-io
+  property.linstor.csi.linbit.com/DrbdOptions/Resource/on-no-data-accessible: suspend-io
+  property.linstor.csi.linbit.com/DrbdOptions/Resource/on-suspended-primary-outdated: force-secondary
+  property.linstor.csi.linbit.com/DrbdOptions/Net/rr-conflict: retry-connect
+```
 
 ### Options
 
@@ -70,20 +36,31 @@ To configure the connection to your Piraeus/LINSTOR controller, use the environm
 The Piraeus High Availability Controller itself can be configured using the following flags:
 
 ```
---attacher-name string                   name of the attacher to consider (default "linstor.csi.linbit.com")
---known-resource-grace-period duration   grace period for known resources after which promotable resources will be considered lost (default 45s)
---kubeconfig string                      path to kubeconfig file
---leader-election                        use kubernetes leader election
---leader-election-healtz-port int        port to use for serving the /healthz endpoint (default 8080)
---leader-election-lease-name string      name for leader election lease (unique for each pod)
---leader-election-namespace string       namespace for leader election
---new-resource-grace-period duration     grace period for newly created resources after which promotable resources will be considered lost (default 45s)
---pod-label-selector string              labels selector for pods to consider (default "linstor.csi.linbit.com/on-storage-lost=remove")
---reconcile-interval duration            time between reconciliation runs (default 10s)
---v int32                                set log level (default 4)
+--drbd-status-interval duration    time between DRBD status updates (default 5s)
+--fail-over-timeout duration       timeout before starting fail-over process (default 5s)
+--grace-period-seconds int         default grace period for deleting k8s objects, in seconds (default 10)
+--node-name string                 the name of node this is running on. defaults to the NODE_NAME environment variable (default "n2.k8s-mwa.at.linbit.com")
+--operations-timeout duration      default timeout for operations (default 1m0s)
+--reconcile-interval duration      maximum interval between reconciliation attempts (default 5s)
+--request-timeout string           The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+--resync-interval duration         how often the internal object cache should be resynchronized (default 5m0s)
+--v int32                          set log level (default 0)
 ```
 
-[Piraeus Operator]: https://github.com/piraeusdatastore/piraeus-operator
+You can directly set them through the helm chart using the matching `options` value.
+
+## What resources are monitored?
+
+The Piraeus High Availability Controller will monitor and manage any Pod that is attached to at least one DRBD resource.
+
+For the HA Controller to work properly, you need quorum, i.e. at least 3 replicas (or 2 replicas + 1 tie-breaker diskless).
+If using lower replica counts, attached Pods will be ignored and are not eligible for faster fail-over.
+
+If you want to mark a Pod as exempt from management by the HA Controller, add the following annotation to the Pod:
+
+```
+kubectl annotate pod <podname> drbd.linbit.com/ignore-fail-over=""
+```
 
 ## What & Why?
 
@@ -189,7 +166,7 @@ node02.ha.cluster       Ready      compute   12d    v1.19.4
 node03.ha.cluster       NotReady   compute   12d    v1.19.4
 ```
 
-We check our pod again. After a short wait (by default after around 45seconds after the node "crashed"):
+We check our pod again. After a short wait (by default after around 10 seconds after the node "crashed"):
 
 ```
 $ kubectl get pod -o wide
@@ -202,50 +179,17 @@ We see that the pod was rescheduled to another node. We can also take a look the
 ```
 $ kubectl get events --sort-by=.metadata.creationTimestamp -w
 ...
-0s          Warning   ForceDeleted              pod/my-stateful-app-with-piraeus-0                                                      pod deleted because a used volume is marked as failing
-0s          Warning   ForceDetached             volumeattachment/csi-d2b994ff19d526ace7059a2d8dea45146552ed078d00ed843ac8a8433c1b5f6f   volume detached because it is marked as failing
+1s   Warning   NodeStorageQuorumLost    node/node01.ha.cluster                  Tainted node because some volumes have lost quorum
+1s   Warning   VolumeWithoutQuorum      pod/suspend-example-57c5c67658-t94wz    Pod was evicted because attached volume lost quorum
+1s   Warning   VolumeWithoutQuorum      volumeattachment/csi-fda9f57ce4csd...   Volume attachment was force-detached because node lost quorum
 ...
 ```
 
 ### How?
 
-The Piraeus High Availability Controller connects to your Piraeus Controller, which in turn is connected to the 
-Satellites. It attaches to the event log generated by the controller, which contains information about the promotion 
-statuses of all volume replicas.
+The Piraeus High Availability Controller monitors DRBD on every node by starting an agent on every node. When DRBD
+reports a resource as promotable, there can't be any currently running Pods on other nodes using the volume. The
+agents then check that assumption against the reported cluster state in Kubernetes.
 
-To "promote" a volume means to make it the primary replica, the only replica in the cluster allowed to write to the
-volume. In case non-primary replicas suddenly report that they could be promoted, we can deduce that the current primary
-is no longer considered active. This means that even if the active primary continues running and allowing writes to the
-volume, writes would not be propagated through the cluster.
-
-As a consequence, we can safely re-schedule Pods using the disconnected replica. To do this quickly, we have to:
-
-* Delete the Pod using the old replica. This can be done without waiting for confirmation from the node. As discussed
-  above, writes initiated by the Pod will no longer propagate through the cluster
-  
-* Delete the volume attachment for the node. This frees up Kubernetes to attach the volume to another node. This 
-  prevents `Multi-attach` errors for Read-Write-Once volumes.
-  
-## Development
-
-You can run the program on your own machine with debugger, as long as you can access a Kubernetes cluster and the LINSTOR API.
-To get access to the LINSTOR API from outside the Kubernetes cluster, you can use a `NodePort` service:
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: linstor-ext
-spec:
-  type: NodePort
-  selector:
-    app: piraeus-op-cs
-    role: piraeus-controller
-  ports:
-  - port: 3370
-    nodePort: 30370
-```
-
-Use the `--kubeconfig` option to configure access to the Kubernetes API.
-
-There are some basic unit tests you can run with `go test ./...`
+If there are Pods on other nodes that should be attached to the resource, the controller can conclude that those pods
+need to be removed. These Pods can't do any writes, so it is safe to delete them.

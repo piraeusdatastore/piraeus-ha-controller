@@ -1,5 +1,5 @@
-# syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM golang:1.17 as builder
+# syntax=docker/dockerfile:1.4
+FROM --platform=$BUILDPLATFORM golang:1.18 as builder
 
 WORKDIR /src/
 COPY go.* /src/
@@ -14,17 +14,23 @@ ARG VERSION=v0.0.0-0.unknown
 
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-X github.com/piraeusdatastore/piraeus-ha-controller/pkg/consts.Version=${VERSION} -extldflags=-static"  -v ./cmd/...
+RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-X github.com/piraeusdatastore/piraeus-ha-controller/pkg/metadata.Version=${VERSION} -extldflags=-static"  -v ./cmd/agent
 
-FROM --platform=$BUILDPLATFORM golang:1.17 as downloader
+FROM debian:bullseye
 
-ARG TARGETOS
-ARG TARGETARCH
-ARG LINSTOR_WAIT_UNTIL_VERSION=v0.1.1
-RUN curl -fsSL https://github.com/LINBIT/linstor-wait-until/releases/download/$LINSTOR_WAIT_UNTIL_VERSION/linstor-wait-until-$LINSTOR_WAIT_UNTIL_VERSION-$TARGETOS-$TARGETARCH.tar.gz | tar xvzC /
+RUN <<EOF
+  set -e
+  apt-get update
+  apt-get install -y wget ca-certificates gnupg
+  { echo 'APT::Install-Recommends "false";' ; echo 'APT::Install-Suggests "false";' ; } > /etc/apt/apt.conf.d/99_piraeus
+  wget -O- https://packages.linbit.com/package-signing-pubkey.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/linbit-keyring.gpg
+  echo "deb http://packages.linbit.com/public" bullseye "misc" > /etc/apt/sources.list.d/linbit.list
+  apt-get update
+  apt-get install -y drbd-utils
+  apt-get clean -y
+  rm -r /var/lib/apt/lists/* /etc/apt/sources.list.d/linbit.list
+  echo "global { usage-count no; } " > /etc/drbd.d/global_common.conf
+EOF
 
-FROM gcr.io/distroless/static:latest
-COPY --from=builder /src/piraeus-ha-controller /piraeus-ha-controller
-COPY --from=downloader /linstor-wait-until /linstor-wait-until
-USER nonroot
-ENTRYPOINT ["/piraeus-ha-controller"]
+COPY --from=builder /src/agent /agent
+CMD ["/agent", "-v=2"]

@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Force demotion of DRBD resources that are suspended in IO and have pods that should terminate. This enables
+  a node to automatically recover from a stuck situation should a network interruption cause DRBD to suspend.
+- Add a custom Taint to nodes that have volumes without quorum, preventing replacement pods being scheduled while
+  the storage layer is interrupted.
+
+### Changed
+- Complete rewrite to work as a node agent instead of relying on LINSTOR. The working principle remains the same, but
+  fail-over is no longer (directly) dependent on uninterrupted LINSTOR communications.
+
 ## [0.3.0] - 2022-02-03
 
 ### Added
