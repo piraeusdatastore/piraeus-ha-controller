@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Query Kubernetes API about available eviction methods instead of falling back to worse methods on errors.
+
 ## [1.0.0-rc.1]
 
 ### Added

@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/piraeusdatastore/linstor-csi v0.19.1
 	github.com/spf13/cobra v1.4.0
+	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
 	k8s.io/api v0.24.1
 	k8s.io/apimachinery v0.24.1
 	k8s.io/cli-runtime v0.24.1

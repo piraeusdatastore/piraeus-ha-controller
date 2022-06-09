@@ -2,19 +2,20 @@ package eviction
 
 import (
 	"context"
-	"sync"
+	"fmt"
 
+	"golang.org/x/sync/singleflight"
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 )
 
 var (
-	canEvictV1      = true
-	canEvictV1beta1 = true
-	lock            = sync.Mutex{}
+	evictVersion = ""
+	initDone     = false
+	sfg          = singleflight.Group{}
 )
 
 // Evict Pods using the best available method in Kubernetes.
@@ -24,41 +25,62 @@ var (
 // * v1beta1 eviction API
 // * v1 Pod deletion API
 // Note that eviction and deletion are basically the same thing in Kubernetes, but eviction may indicate intent better.
-// This function keeps track of which method worked, and uses that method in later invocations.
 func Evict(ctx context.Context, kubernetes kubernetes.Interface, namespace, name string, opts metav1.DeleteOptions) error {
-	if canEvictV1 {
-		err := kubernetes.CoreV1().Pods(namespace).EvictV1(ctx, &policyv1.Eviction{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-			},
-			DeleteOptions: &opts,
-		})
-		if !errors.IsNotFound(err) {
-			return err
+	evictVersion, err, _ := sfg.Do("init", func() (interface{}, error) {
+		if initDone {
+			return evictVersion, nil
 		}
 
-		lock.Lock()
-		canEvictV1 = false
-		lock.Unlock()
+		result, err := findSupportedEvictVersion(kubernetes)
+		if err != nil {
+			return "", err
+		}
+
+		evictVersion = result
+		initDone = true
+		return result, nil
+	})
+	if err != nil {
+		return err
 	}
 
-	if canEvictV1beta1 {
-		err := kubernetes.CoreV1().Pods(namespace).EvictV1beta1(ctx, &policyv1beta1.Eviction{
+	if evictVersion == "v1" {
+		return kubernetes.CoreV1().Pods(namespace).EvictV1(ctx, &policyv1.Eviction{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
 				Namespace: namespace,
 			},
 			DeleteOptions: &opts,
 		})
-		if !errors.IsNotFound(err) {
-			return err
-		}
+	}
 
-		lock.Lock()
-		canEvictV1beta1 = false
-		lock.Unlock()
+	if evictVersion == "v1beta1" {
+		return kubernetes.CoreV1().Pods(namespace).EvictV1beta1(ctx, &policyv1beta1.Eviction{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+			DeleteOptions: &opts,
+		})
 	}
 
 	return kubernetes.CoreV1().Pods(namespace).Delete(ctx, name, opts)
+}
+
+func findSupportedEvictVersion(client kubernetes.Interface) (string, error) {
+	resources, err := client.Discovery().ServerResourcesForGroupVersion("v1")
+	if err != nil {
+		return "", fmt.Errorf("failed to get resource list: %w", err)
+	}
+
+	for _, res := range resources.APIResources {
+		if res.Name == "pods/eviction" {
+			klog.V(2).Infof("API server supports pod eviction %s", res.Version)
+			return res.Version, nil
+		}
+	}
+
+	klog.V(2).Infof("API server does not support pod eviction")
+
+	return "", nil
 }
