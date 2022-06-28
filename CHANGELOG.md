@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2022-06-28
+
 ### Changed
 - Query Kubernetes API about available eviction methods instead of falling back to worse methods on errors.
 
@@ -71,7 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.2...HEAD
+[1.0.0-rc.2]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.3.0...v1.0.0-rc.1
 [0.3.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.1.3...v0.2.0
