@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Force deletion of Pods if running Node appears not ready (i.e. it cannot confirm deletion of the Pod).
+
 ## [1.0.0-rc.2] - 2022-06-28
 
 ### Changed

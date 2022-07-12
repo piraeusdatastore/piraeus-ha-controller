@@ -255,6 +255,8 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 			go func() {
 				defer wg.Done()
 
+				klog.V(3).Infof("reconcile '%T' for resource '%s'", r, req.Resource.Name)
+
 				ctx, cancel := context.WithTimeout(ctx, a.Timeout())
 				defer cancel()
 
@@ -262,6 +264,8 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 				if err != nil {
 					klog.V(1).Infof("reconciliation failed: %v", err)
 				}
+
+				klog.V(3).Infof("reconcile '%T' for resource '%s' ended", r, req.Resource.Name)
 			}()
 		}
 	}

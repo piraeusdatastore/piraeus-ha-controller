@@ -158,14 +158,31 @@ func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceSta
 				klog.V(2).Infof("Pod '%s/%s' is exempt from eviction per annotation", pod.Namespace, pod.Name)
 			}
 
-			err := eviction.Evict(ctx, f.client, pod.Namespace, pod.Name, metav1.DeleteOptions{
-				GracePeriodSeconds: &f.opt.DeletionGraceSec,
-				Preconditions:      metav1.NewUIDPreconditions(string(pod.UID)),
-			})
-			if ignoreNotFound(err) != nil {
-				klog.V(2).ErrorS(err, "failed to evict pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
-				*errLoc = err
-				return
+			if nodeReady(node) {
+				klog.V(2).Infof("Node %s running Pod '%s/%s' appears ready, using graceful eviction", node.Name, pod.Namespace, pod.Name)
+
+				err := eviction.Evict(ctx, f.client, pod.Namespace, pod.Name, metav1.DeleteOptions{
+					GracePeriodSeconds: &f.opt.DeletionGraceSec,
+					Preconditions:      metav1.NewUIDPreconditions(string(pod.UID)),
+				})
+				if ignoreNotFound(err) != nil {
+					klog.V(2).ErrorS(err, "failed to evict pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+					*errLoc = err
+					return
+				}
+			} else {
+				klog.V(2).Infof("Node %s running Pod '%s/%s' appears not ready, using forceful deletion", node.Name, pod.Namespace, pod.Name)
+
+				noGrace := int64(0)
+				err := f.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{
+					GracePeriodSeconds: &noGrace,
+					Preconditions:      metav1.NewUIDPreconditions(string(pod.UID)),
+				})
+				if ignoreNotFound(err) != nil {
+					klog.V(2).ErrorS(err, "failed to delete pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+					*errLoc = err
+					return
+				}
 			}
 
 			recorder.Eventf(pod, pv, corev1.EventTypeWarning, metadata.ReasonVolumeWithoutQuorum, metadata.ActionEvictedPod, "Pod was evicted because attached volume lost quorum")
@@ -202,6 +219,16 @@ func ignoreNotFound(err error) error {
 	}
 
 	return err
+}
+
+func nodeReady(node *corev1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+
+	return false
 }
 
 func allPodsMountReadOnly(pods []*corev1.Pod, pvcName string) bool {
