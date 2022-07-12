@@ -271,7 +271,7 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 	return nil
 }
 
-func (a *agent) Healtz(writer http.ResponseWriter) {
+func (a *agent) Healthz(writer http.ResponseWriter) {
 	a.mu.Lock()
 	sinceLastReconcile := time.Now().Sub(a.lastReconcileStart)
 	a.mu.Unlock()
