@@ -95,6 +95,31 @@ func (d *drbdResources) Get() []DrbdResourceState {
 	return result
 }
 
+type DrbdConnection struct {
+	PeerNodeId      int    `json:"peer-node-id"`
+	Name            string `json:"name"`
+	ConnectionState string `json:"connection-state"`
+	Congested       bool   `json:"congested"`
+	PeerRole        string `json:"peer-role"`
+	ApInFlight      int    `json:"ap-in-flight"`
+	RsInFlight      int    `json:"rs-in-flight"`
+	PeerDevices     []struct {
+		Volume                 int     `json:"volume"`
+		ReplicationState       string  `json:"replication-state"`
+		PeerDiskState          string  `json:"peer-disk-state"`
+		PeerClient             bool    `json:"peer-client"`
+		ResyncSuspended        string  `json:"resync-suspended"`
+		Received               int     `json:"received"`
+		Sent                   int     `json:"sent"`
+		OutOfSync              int     `json:"out-of-sync"`
+		Pending                int     `json:"pending"`
+		Unacked                int     `json:"unacked"`
+		HasSyncDetails         bool    `json:"has-sync-details"`
+		HasOnlineVerifyDetails bool    `json:"has-online-verify-details"`
+		PercentInSync          float64 `json:"percent-in-sync"`
+	} `json:"peer_devices"`
+}
+
 // DrbdResourceState is the parsed output of "drbdsetup status --json".
 type DrbdResourceState struct {
 	Name             string `json:"name"`
@@ -121,30 +146,7 @@ type DrbdResourceState struct {
 		UpperPending int    `json:"upper-pending"`
 		LowerPending int    `json:"lower-pending"`
 	} `json:"devices"`
-	Connections []struct {
-		PeerNodeId      int    `json:"peer-node-id"`
-		Name            string `json:"name"`
-		ConnectionState string `json:"connection-state"`
-		Congested       bool   `json:"congested"`
-		PeerRole        string `json:"peer-role"`
-		ApInFlight      int    `json:"ap-in-flight"`
-		RsInFlight      int    `json:"rs-in-flight"`
-		PeerDevices     []struct {
-			Volume                 int     `json:"volume"`
-			ReplicationState       string  `json:"replication-state"`
-			PeerDiskState          string  `json:"peer-disk-state"`
-			PeerClient             bool    `json:"peer-client"`
-			ResyncSuspended        string  `json:"resync-suspended"`
-			Received               int     `json:"received"`
-			Sent                   int     `json:"sent"`
-			OutOfSync              int     `json:"out-of-sync"`
-			Pending                int     `json:"pending"`
-			Unacked                int     `json:"unacked"`
-			HasSyncDetails         bool    `json:"has-sync-details"`
-			HasOnlineVerifyDetails bool    `json:"has-online-verify-details"`
-			PercentInSync          float64 `json:"percent-in-sync"`
-		} `json:"peer_devices"`
-	} `json:"connections"`
+	Connections []DrbdConnection `json:"connections"`
 }
 
 // MayPromote returns the best local approximation of the may promote flag from "drbdsetup events2".

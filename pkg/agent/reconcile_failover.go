@@ -66,58 +66,66 @@ func (f *failoverReconciler) RunForResource(ctx context.Context, req *ReconcileR
 		return nil
 	}
 
-	for _, va := range req.Attachments {
-		vaNode := va.Spec.NodeName
-
-		if vaNode == f.opt.NodeName {
-			continue
-		}
-
-		connection := ""
-		for _, peer := range req.Resource.Connections {
-			if peer.Name == vaNode {
-				connection = peer.ConnectionState
-			}
-		}
-
-		var nodePods []*corev1.Pod
-		for _, pod := range req.Pods {
-			if pod.Spec.NodeName == vaNode {
-				nodePods = append(nodePods, pod)
-			}
-		}
-
-		node := req.FindNode(vaNode)
-		if node == nil {
-			klog.V(2).Infof("Node triggering fail-over does not exist in cluster")
-			continue
-		}
-
-		if connection == "Connected" {
-			klog.V(2).Infof("resource '%s' on node '%s' connected", req.Resource.Name, vaNode)
-			continue
-		}
-
-		failedAt, ok := f.drbdFailedAt[req.Resource.Name]
-		if !ok {
-			f.drbdFailedAt[req.Resource.Name] = req.RefTime
-			failedAt = req.RefTime
-		}
-
-		if failedAt.Add(f.opt.FailOverTimeout).After(req.RefTime) {
-			klog.V(2).Infof("resource '%s' on node '%s' has not reached fail-over timeout", req.Resource.Name, vaNode)
-			continue
-		}
-
-		klog.V(1).Infof("resource '%s' on node '%s' has failed, evicting", req.Resource.Name, vaNode)
-
-		err := f.evictPods(ctx, req.Resource, req.Volume, nodePods, va, node, req.RefTime, recorder)
-		if err != nil {
-			klog.V(1).ErrorS(err, "failed to fail-over resource")
-		}
+	for _, conn := range req.Resource.Connections {
+		f.reconcileConnection(ctx, req, conn, recorder)
 	}
 
 	return nil
+}
+
+func (f *failoverReconciler) reconcileConnection(ctx context.Context, req *ReconcileRequest, conn DrbdConnection, recorder events.EventRecorder) {
+	if conn.Name == f.opt.NodeName {
+		return
+	}
+
+	if conn.ConnectionState == "Connected" {
+		klog.V(3).Infof("resource '%s' on node '%s' connected", req.Resource.Name, conn.Name)
+		return
+	}
+
+	node := req.FindNode(conn.Name)
+	if node == nil {
+		klog.V(3).Infof("Node triggering fail-over does not exist in cluster")
+		return
+	}
+
+	var nodePods []*corev1.Pod
+	for _, pod := range req.Pods {
+		if pod.Spec.NodeName == conn.Name {
+			nodePods = append(nodePods, pod)
+		}
+	}
+
+	var va *storagev1.VolumeAttachment
+	for _, v := range req.Attachments {
+		if v.Spec.NodeName == conn.Name {
+			va = v
+			break
+		}
+	}
+
+	if len(nodePods) == 0 && va == nil {
+		klog.V(3).Infof("resource '%s' on node '%s' has failed, but nothing to evict", req.Resource.Name, conn.Name)
+		return
+	}
+
+	failedAt, ok := f.drbdFailedAt[req.Resource.Name]
+	if !ok {
+		f.drbdFailedAt[req.Resource.Name] = req.RefTime
+		failedAt = req.RefTime
+	}
+
+	if failedAt.Add(f.opt.FailOverTimeout).After(req.RefTime) {
+		klog.V(3).Infof("resource '%s' on node '%s' has not reached fail-over timeout", req.Resource.Name, conn.Name)
+		return
+	}
+
+	klog.V(1).Infof("resource '%s' on node '%s' has failed, evicting", req.Resource.Name, conn.Name)
+
+	err := f.evictPods(ctx, req.Resource, req.Volume, nodePods, va, node, req.RefTime, recorder)
+	if err != nil {
+		klog.V(1).ErrorS(err, "failed to fail-over resource")
+	}
 }
 
 func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceState, pv *corev1.PersistentVolume, pods []*corev1.Pod, attachment *storagev1.VolumeAttachment, node *corev1.Node, refTime time.Time, recorder events.EventRecorder) error {
@@ -197,18 +205,20 @@ func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceSta
 		}
 	}
 
-	klog.V(2).Infof("resource '%s' requires force detach of node %s", res.Name, attachment.Spec.NodeName)
+	if attachment != nil {
+		klog.V(2).Infof("resource '%s' requires force detach of node %s", res.Name, attachment.Spec.NodeName)
 
-	err = f.client.StorageV1().VolumeAttachments().Delete(ctx, attachment.Name, metav1.DeleteOptions{
-		Preconditions:      metav1.NewUIDPreconditions(string(attachment.UID)),
-		GracePeriodSeconds: &f.opt.DeletionGraceSec,
-	})
-	if err != nil {
-		klog.V(2).ErrorS(err, "failed to force detach of node", "node", attachment.Spec.NodeName)
-		return fmt.Errorf("failed force detach: %w", err)
+		err = f.client.StorageV1().VolumeAttachments().Delete(ctx, attachment.Name, metav1.DeleteOptions{
+			Preconditions:      metav1.NewUIDPreconditions(string(attachment.UID)),
+			GracePeriodSeconds: &f.opt.DeletionGraceSec,
+		})
+		if err != nil {
+			klog.V(2).ErrorS(err, "failed to force detach of node", "node", attachment.Spec.NodeName)
+			return fmt.Errorf("failed force detach: %w", err)
+		}
+
+		recorder.Eventf(attachment, nil, corev1.EventTypeWarning, metadata.ReasonVolumeWithoutQuorum, metadata.ActionVolumeAttachmentDeleted, "Volume attachment was force-detached because node lost quorum")
 	}
-
-	recorder.Eventf(attachment, nil, corev1.EventTypeWarning, metadata.ReasonVolumeWithoutQuorum, metadata.ActionVolumeAttachmentDeleted, "Volume attachment was force-detached because node lost quorum")
 
 	return nil
 }
