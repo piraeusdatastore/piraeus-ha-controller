@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.3] - 2022-07-14
+
 ### Changed
 - Force deletion of Pods if running Node appears not ready (i.e. it cannot confirm deletion of the Pod).
 
@@ -76,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.2...HEAD
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.3...HEAD
+[1.0.0-rc.3]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.3.0...v1.0.0-rc.1
 [0.3.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.2.0...v0.3.0
