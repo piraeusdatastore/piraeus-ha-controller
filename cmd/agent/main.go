@@ -55,7 +55,7 @@ func NewAgentCommand() *cobra.Command {
 
 				mux := &http.ServeMux{}
 				mux.HandleFunc("/healthz", func(writer http.ResponseWriter, request *http.Request) {
-					ag.Healtz(writer)
+					ag.Healthz(writer)
 				})
 
 				go http.Serve(listener, mux)

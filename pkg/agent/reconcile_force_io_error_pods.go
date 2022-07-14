@@ -81,6 +81,9 @@ func (f *forceIoErrorReconciler) RunForResource(ctx context.Context, req *Reconc
 			return fmt.Errorf("pod '%s/%s' does not have an owner", pod.Namespace, pod.Name)
 		}
 
+		// NB: we only evict here, and never do a forceful deletion as in the failover case. In here we only evict
+		// Pods that are running on the local node, so kubelet better be able to terminate Pods.
+
 		err = eviction.Evict(ctx, f.client, pod.Namespace, pod.Name, metav1.DeleteOptions{
 			GracePeriodSeconds: &f.opt.DeletionGraceSec,
 			Preconditions:      metav1.NewUIDPreconditions(string(pod.UID)),
