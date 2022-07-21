@@ -24,6 +24,7 @@ type failoverReconciler struct {
 	opt          *Options
 	client       kubernetes.Interface
 	drbdFailedAt map[string]time.Time
+	mu           sync.Mutex
 }
 
 // NewFailoverReconciler creates a reconciler that "fails over" pods that are on storage without quorum.
@@ -52,7 +53,9 @@ func (f *failoverReconciler) RunForResource(ctx context.Context, req *ReconcileR
 	if !req.Resource.MayPromote() {
 		klog.V(4).Infof("resource '%s' is not promotable", req.Resource.Name)
 
+		f.mu.Lock()
 		delete(f.drbdFailedAt, req.Resource.Name)
+		f.mu.Unlock()
 		return nil
 	}
 
@@ -109,11 +112,13 @@ func (f *failoverReconciler) reconcileConnection(ctx context.Context, req *Recon
 		return
 	}
 
+	f.mu.Lock()
 	failedAt, ok := f.drbdFailedAt[req.Resource.Name]
 	if !ok {
 		f.drbdFailedAt[req.Resource.Name] = req.RefTime
 		failedAt = req.RefTime
 	}
+	f.mu.Unlock()
 
 	if failedAt.Add(f.opt.FailOverTimeout).After(req.RefTime) {
 		klog.V(3).Infof("resource '%s' on node '%s' has not reached fail-over timeout", req.Resource.Name, conn.Name)
