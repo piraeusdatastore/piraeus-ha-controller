@@ -140,7 +140,13 @@ func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceSta
 	}
 
 	if tainted {
-		recorder.Eventf(node, attachment, corev1.EventTypeWarning, metadata.ReasonNodeStorageQuorumLost, metadata.ActionTaintedNode, "Tainted node because some volumes have lost quorum")
+		// NB: don't accidentally create a "nil interface value", which would confuse the event-recorder into panicking.
+		if attachment != nil {
+			recorder.Eventf(node, attachment, corev1.EventTypeWarning, metadata.ReasonNodeStorageQuorumLost, metadata.ActionTaintedNode, "Tainted node because some volumes have lost quorum")
+		} else {
+			recorder.Eventf(node, nil, corev1.EventTypeWarning, metadata.ReasonNodeStorageQuorumLost, metadata.ActionTaintedNode, "Tainted node because some volumes have lost quorum")
+		}
+
 	}
 
 	klog.V(2).Infof("resource '%s' requires eviction of %d pods", res.Name, len(pods))
@@ -193,7 +199,12 @@ func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceSta
 				}
 			}
 
-			recorder.Eventf(pod, pv, corev1.EventTypeWarning, metadata.ReasonVolumeWithoutQuorum, metadata.ActionEvictedPod, "Pod was evicted because attached volume lost quorum")
+			// NB: don't accidentally create a "nil interface value", which would confuse the event-recorder into panicking.
+			if pv != nil {
+				recorder.Eventf(pod, pv, corev1.EventTypeWarning, metadata.ReasonVolumeWithoutQuorum, metadata.ActionEvictedPod, "Pod was evicted because attached volume lost quorum")
+			} else {
+				recorder.Eventf(pod, nil, corev1.EventTypeWarning, metadata.ReasonVolumeWithoutQuorum, metadata.ActionEvictedPod, "Pod was evicted because attached volume lost quorum")
+			}
 		}(pods[i], &errs[i])
 	}
 
