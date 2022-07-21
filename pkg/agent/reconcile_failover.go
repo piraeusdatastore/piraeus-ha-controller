@@ -219,9 +219,14 @@ func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceSta
 	if attachment != nil {
 		klog.V(2).Infof("resource '%s' requires force detach of node %s", res.Name, attachment.Spec.NodeName)
 
+		gracePeriod := f.opt.DeletionGraceSec
+		if !nodeReady(node) {
+			gracePeriod = 0
+		}
+
 		err = f.client.StorageV1().VolumeAttachments().Delete(ctx, attachment.Name, metav1.DeleteOptions{
 			Preconditions:      metav1.NewUIDPreconditions(string(attachment.UID)),
-			GracePeriodSeconds: &f.opt.DeletionGraceSec,
+			GracePeriodSeconds: &gracePeriod,
 		})
 		if err != nil {
 			klog.V(2).ErrorS(err, "failed to force detach of node", "node", attachment.Spec.NodeName)

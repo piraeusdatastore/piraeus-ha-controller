@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Fixed an issue with generated events that would lead to the controller to panic because of a nil interface.
+- Immediately delete volume attachment if node is not ready.
 
 ## [1.0.0] - 2022-07-21
 
