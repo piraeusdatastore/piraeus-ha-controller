@@ -6,17 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0-rc.3] - 2022-07-14
+## [1.0.0] - 2022-07-21
 
-### Changed
-- Force deletion of Pods if running Node appears not ready (i.e. it cannot confirm deletion of the Pod).
-
-## [1.0.0-rc.2] - 2022-06-28
-
-### Changed
-- Query Kubernetes API about available eviction methods instead of falling back to worse methods on errors.
-
-## [1.0.0-rc.1]
+### Breaking
+- Complete rewrite to work as a node agent instead of relying on LINSTOR. The working principle remains the same, but
+  fail-over is no longer (directly) dependent on uninterrupted LINSTOR communications.
 
 ### Added
 - Force demotion of DRBD resources that are suspended in IO and have pods that should terminate. This enables
@@ -25,8 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the storage layer is interrupted.
 
 ### Changed
-- Complete rewrite to work as a node agent instead of relying on LINSTOR. The working principle remains the same, but
-  fail-over is no longer (directly) dependent on uninterrupted LINSTOR communications.
+- Force deletion of Pods if running Node appears not ready (i.e. it cannot confirm deletion of the Pod).
+- Query Kubernetes API about available eviction methods instead of falling back to worse methods on errors.
 
 ## [0.3.0] - 2022-02-03
 
@@ -78,10 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.3...HEAD
-[1.0.0-rc.3]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.2...v1.0.0-rc.3
-[1.0.0-rc.2]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0-rc.1...v1.0.0-rc.2
-[1.0.0-rc.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.3.0...v1.0.0-rc.1
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.1.2...v0.1.3
