@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2022-07-25
+
 ### Changed
 - Fixed an issue with generated events that would lead to the controller to panic because of a nil interface.
 - Immediately delete volume attachment if node is not ready.
@@ -77,7 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.1.3...v0.2.0
