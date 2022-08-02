@@ -20,6 +20,7 @@ func NewAgentCommand() *cobra.Command {
 	var drbdStatusInterval, reconcileInterval, resyncInterval, operationsTimeout, failOverTimeout time.Duration
 	var deletionGraceSeconds int64
 	var nodeName, healthzBindAddress string
+	var failOverUnsafePods bool
 
 	cmd := &cobra.Command{
 		Use:     "node-agent",
@@ -42,6 +43,7 @@ func NewAgentCommand() *cobra.Command {
 				DrbdStatusInterval: drbdStatusInterval,
 				FailOverTimeout:    failOverTimeout,
 				NodeName:           nodeName,
+				FailOverUnsafePods: failOverUnsafePods,
 			})
 			if err != nil {
 				return err
@@ -74,6 +76,7 @@ func NewAgentCommand() *cobra.Command {
 	cmd.Flags().Int64Var(&deletionGraceSeconds, "grace-period-seconds", 10, "default grace period for deleting k8s objects, in seconds")
 	cmd.Flags().StringVar(&nodeName, "node-name", os.Getenv("NODE_NAME"), "the name of node this is running on. defaults to the NODE_NAME environment variable")
 	cmd.Flags().StringVar(&healthzBindAddress, "health-bind-address", ":8000", "the address to bind to for the /healthz endpoint")
+	cmd.Flags().BoolVar(&failOverUnsafePods, "fail-over-unsafe-pods", false, "fail over Pods that use storage with unknown fail over properties")
 	return cmd
 }
 

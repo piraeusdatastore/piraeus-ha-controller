@@ -47,6 +47,8 @@ type Options struct {
 	OperationTimeout time.Duration
 	// FailOverTimeout is minimum wait between noticing quorum loss and starting the fail-over process.
 	FailOverTimeout time.Duration
+	// FailOverUnsafePods indicates if Pods with unknown other volume types should be failed over as well.
+	FailOverUnsafePods bool
 }
 
 // Timeout returns the operations timeout.
@@ -103,6 +105,17 @@ func NewAgent(opt *Options) (*agent, error) {
 
 			return []string{obj.Spec.CSI.VolumeHandle}, nil
 		}),
+		"pvc": indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
+			if obj.Spec.ClaimRef == nil {
+				return nil, nil
+			}
+
+			if obj.Spec.ClaimRef.Kind != "PersistentVolumeClaim" {
+				return nil, nil
+			}
+
+			return []string{fmt.Sprintf("%s/%s", obj.Spec.ClaimRef.Namespace, obj.Spec.ClaimRef.Name)}, nil
+		}),
 	})
 
 	klog.V(2).Info("setting up Pod informer")
@@ -154,7 +167,7 @@ func NewAgent(opt *Options) (*agent, error) {
 		broadcaster:     broadcaster,
 		Options:         opt,
 		reconcilers: []Reconciler{
-			NewFailoverReconciler(opt, client),
+			NewFailoverReconciler(opt, client, pvInformer.GetIndexer()),
 			NewSuspendedPodReconciler(opt),
 			NewForceIoErrorReconciler(opt, client),
 		},

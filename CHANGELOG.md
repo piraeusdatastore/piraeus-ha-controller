@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Exempt Pods that are attached to other types of storage by default, unless the volumes are known to be safe (such as
+  ConfigMap, DownwardAPI, Secret, and other readonly volumes).
+
 ### Fixed
 - Fixed a bug that meant the manual Pod exemption from fail over via annotations would be ignored.
 
