@@ -175,6 +175,7 @@ func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceSta
 
 			if _, exists := pod.ObjectMeta.Annotations[metadata.AnnotationIgnoreFailOver]; exists {
 				klog.V(2).Infof("Pod '%s/%s' is exempt from eviction per annotation", pod.Namespace, pod.Name)
+				return
 			}
 
 			if nodeReady(node) {
