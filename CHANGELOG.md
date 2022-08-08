@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2022-08-08
+
 ### Added
 - Exempt Pods that are attached to other types of storage by default, unless the volumes are known to be safe (such as
   ConfigMap, DownwardAPI, Secret, and other readonly volumes).
@@ -86,7 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.2.0...v0.3.0
