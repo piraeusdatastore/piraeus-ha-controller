@@ -6,15 +6,18 @@ import (
 	"sync"
 	"time"
 
+	csilinstor "github.com/piraeusdatastore/linstor-csi/pkg/linstor"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 
 	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/eviction"
+	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/indexers"
 	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/metadata"
 )
 
@@ -24,6 +27,7 @@ type failoverReconciler struct {
 	opt          *Options
 	client       kubernetes.Interface
 	drbdFailedAt map[string]time.Time
+	pvIndexer    cache.Indexer
 	mu           sync.Mutex
 }
 
@@ -39,11 +43,12 @@ type failoverReconciler struct {
 // * Adding a taint on the node, causing new Pods to avoid the node.
 // * Evicting all pods using that volume from the failed node, creating new pods to replace them.
 // * Delete the volume attachment, informing Kubernetes that attaching the volume to a new node is fine.
-func NewFailoverReconciler(opt *Options, client kubernetes.Interface) Reconciler {
+func NewFailoverReconciler(opt *Options, client kubernetes.Interface, pvIndexer cache.Indexer) Reconciler {
 	return &failoverReconciler{
 		opt:          opt,
 		client:       client,
 		drbdFailedAt: make(map[string]time.Time),
+		pvIndexer:    pvIndexer,
 	}
 }
 
@@ -175,6 +180,12 @@ func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceSta
 
 			if _, exists := pod.ObjectMeta.Annotations[metadata.AnnotationIgnoreFailOver]; exists {
 				klog.V(2).Infof("Pod '%s/%s' is exempt from eviction per annotation", pod.Namespace, pod.Name)
+				return
+			}
+
+			if !f.opt.FailOverUnsafePods && !f.OnlySafeVolumes(pod) {
+				klog.V(2).Infof("Pod '%s/%s' is exempt from eviction because of unsafe volumes", pod.Namespace, pod.Name)
+				return
 			}
 
 			if nodeReady(node) {
@@ -242,6 +253,51 @@ func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceSta
 	}
 
 	return nil
+}
+
+func (f *failoverReconciler) IsSafeVolume(vol *corev1.Volume, namespace string) bool {
+	switch {
+	// All of these are always safe to fail over
+	case vol.ConfigMap != nil:
+	case vol.CSI != nil:
+	case vol.DownwardAPI != nil:
+	case vol.EmptyDir != nil:
+	case vol.Ephemeral != nil:
+	case vol.GitRepo != nil:
+	case vol.Projected != nil:
+	case vol.Secret != nil:
+	// Sometimes safe to fail over, depending on driver and read-only mode
+	case vol.PersistentVolumeClaim != nil:
+		if vol.PersistentVolumeClaim.ReadOnly {
+			return true
+		}
+
+		pvs, err := indexers.List[corev1.PersistentVolume](f.pvIndexer.ByIndex("pvc", fmt.Sprintf("%s/%s", namespace, vol.PersistentVolumeClaim.ClaimName)))
+		if err != nil {
+			return false
+		}
+
+		if len(pvs) != 1 {
+			return false
+		}
+
+		pv := pvs[0]
+		return pv.Spec.CSI != nil && (pv.Spec.CSI.ReadOnly || pv.Spec.CSI.Driver == csilinstor.DriverName)
+	// Unknown, assume it's not safe to fail over
+	default:
+		return false
+	}
+
+	return true
+}
+
+func (f *failoverReconciler) OnlySafeVolumes(pod *corev1.Pod) bool {
+	for i := range pod.Spec.Volumes {
+		if !f.IsSafeVolume(&pod.Spec.Volumes[i], pod.Namespace) {
+			return false
+		}
+	}
+	return true
 }
 
 func ignoreNotFound(err error) error {
