@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- No longer attempt to parse numbers from drbdsetup status that are not relevant. This prevents issue when said numbers
+  are outside the expected range.
+
 ## [1.1.0] - 2022-08-08
 
 ### Added

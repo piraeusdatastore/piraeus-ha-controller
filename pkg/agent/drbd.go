@@ -96,57 +96,23 @@ func (d *drbdResources) Get() []DrbdResourceState {
 }
 
 type DrbdConnection struct {
-	PeerNodeId      int    `json:"peer-node-id"`
 	Name            string `json:"name"`
-	ConnectionState string `json:"connection-state"`
-	Congested       bool   `json:"congested"`
 	PeerRole        string `json:"peer-role"`
-	ApInFlight      int    `json:"ap-in-flight"`
-	RsInFlight      int    `json:"rs-in-flight"`
-	PeerDevices     []struct {
-		Volume                 int     `json:"volume"`
-		ReplicationState       string  `json:"replication-state"`
-		PeerDiskState          string  `json:"peer-disk-state"`
-		PeerClient             bool    `json:"peer-client"`
-		ResyncSuspended        string  `json:"resync-suspended"`
-		Received               int     `json:"received"`
-		Sent                   int     `json:"sent"`
-		OutOfSync              int     `json:"out-of-sync"`
-		Pending                int     `json:"pending"`
-		Unacked                int     `json:"unacked"`
-		HasSyncDetails         bool    `json:"has-sync-details"`
-		HasOnlineVerifyDetails bool    `json:"has-online-verify-details"`
-		PercentInSync          float64 `json:"percent-in-sync"`
-	} `json:"peer_devices"`
+	ConnectionState string `json:"connection-state"`
+}
+
+type DrbdDevice struct {
+	Quorum bool `json:"quorum"`
 }
 
 // DrbdResourceState is the parsed output of "drbdsetup status --json".
 type DrbdResourceState struct {
-	Name             string `json:"name"`
-	NodeId           int    `json:"node-id"`
-	Role             string `json:"role"`
-	Suspended        bool   `json:"suspended"`
-	SuspendedUser    bool   `json:"suspended-user"`
-	SuspendedNoData  bool   `json:"suspended-no-data"`
-	SuspendedFencing bool   `json:"suspended-fencing"`
-	SuspendedQuorum  bool   `json:"suspended-quorum"`
-	ForceIoFailures  bool   `json:"force-io-failures"`
-	WriteOrdering    string `json:"write-ordering"`
-	Devices          []struct {
-		Volume       int    `json:"volume"`
-		Minor        int    `json:"minor"`
-		DiskState    string `json:"disk-state"`
-		Client       bool   `json:"client"`
-		Quorum       bool   `json:"quorum"`
-		Size         int    `json:"size"`
-		Read         int    `json:"read"`
-		Written      int    `json:"written"`
-		AlWrites     int    `json:"al-writes"`
-		BmWrites     int    `json:"bm-writes"`
-		UpperPending int    `json:"upper-pending"`
-		LowerPending int    `json:"lower-pending"`
-	} `json:"devices"`
-	Connections []DrbdConnection `json:"connections"`
+	Name            string           `json:"name"`
+	Role            string           `json:"role"`
+	Suspended       bool             `json:"suspended"`
+	ForceIoFailures bool             `json:"force-io-failures"`
+	Devices         []DrbdDevice     `json:"devices"`
+	Connections     []DrbdConnection `json:"connections"`
 }
 
 // MayPromote returns the best local approximation of the may promote flag from "drbdsetup events2".
