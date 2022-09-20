@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2022-09-20
+
 ### Fixed
 
 - No longer attempt to parse numbers from drbdsetup status that are not relevant. This prevents issue when said numbers
@@ -93,7 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v0.3.0...v1.0.0
