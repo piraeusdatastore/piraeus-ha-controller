@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2023-02-20
+
+### Changed
+
+- Build with go 1.19
+- Bumped dependencies
+
 ## [1.1.1] - 2022-09-20
 
 ### Fixed
@@ -95,7 +102,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.0.0...v1.0.1
