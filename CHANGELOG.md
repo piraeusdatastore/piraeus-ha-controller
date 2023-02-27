@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Ignore non-running Pods during fail-over events.
+
 ## [1.1.2] - 2023-02-20
 
 ### Changed

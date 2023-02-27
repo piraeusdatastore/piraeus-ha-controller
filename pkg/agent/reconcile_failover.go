@@ -97,10 +97,14 @@ func (f *failoverReconciler) reconcileConnection(ctx context.Context, req *Recon
 		return
 	}
 
-	var nodePods []*corev1.Pod
+	var runningNodePods []*corev1.Pod
 	for _, pod := range req.Pods {
+		if pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+
 		if pod.Spec.NodeName == conn.Name {
-			nodePods = append(nodePods, pod)
+			runningNodePods = append(runningNodePods, pod)
 		}
 	}
 
@@ -112,7 +116,7 @@ func (f *failoverReconciler) reconcileConnection(ctx context.Context, req *Recon
 		}
 	}
 
-	if len(nodePods) == 0 && va == nil {
+	if len(runningNodePods) == 0 && va == nil {
 		klog.V(3).Infof("resource '%s' on node '%s' has failed, but nothing to evict", req.Resource.Name, conn.Name)
 		return
 	}
@@ -132,7 +136,7 @@ func (f *failoverReconciler) reconcileConnection(ctx context.Context, req *Recon
 
 	klog.V(1).Infof("resource '%s' on node '%s' has failed, evicting", req.Resource.Name, conn.Name)
 
-	err := f.evictPods(ctx, req.Resource, req.Volume, nodePods, va, node, req.RefTime, recorder)
+	err := f.evictPods(ctx, req.Resource, req.Volume, runningNodePods, va, node, req.RefTime, recorder)
 	if err != nil {
 		klog.V(1).ErrorS(err, "failed to fail-over resource")
 	}
