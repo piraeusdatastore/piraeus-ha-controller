@@ -31,8 +31,6 @@ parameters:
 
 ### Options
 
-To configure the connection to your Piraeus/LINSTOR controller, use the environment variables described [here](https://pkg.go.dev/github.com/LINBIT/golinstor/client#NewClient)
-
 The Piraeus High Availability Controller itself can be configured using the following flags:
 
 ```
