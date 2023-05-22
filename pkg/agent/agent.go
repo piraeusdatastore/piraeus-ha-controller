@@ -200,6 +200,10 @@ func (a *agent) Run(ctx context.Context) error {
 
 	a.informerFactory.Start(ctx.Done())
 
+	klog.V(1).Info("waiting for caches to sync")
+	a.informerFactory.WaitForCacheSync(ctx.Done())
+	klog.V(1).Info("caches synced")
+
 	for {
 		err := a.reconcile(ctx, recorder)
 		if err != nil {
@@ -302,6 +306,19 @@ func (a *agent) Healthz(writer http.ResponseWriter) {
 	if !a.pvInformer.HasSynced() || !a.podInformer.HasSynced() || !a.vaInformer.HasSynced() || !a.nodeInformer.HasSynced() {
 		writer.WriteHeader(http.StatusInternalServerError)
 		_, _ = writer.Write([]byte("informers not synced"))
+		return
+	}
+
+	_, exists, err := indexers.GetByKey[corev1.Node](a.nodeInformer.GetStore(), a.NodeName)
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = writer.Write([]byte(fmt.Sprintf("failed to check own node: %s", err)))
+		return
+	}
+
+	if !exists {
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = writer.Write([]byte(fmt.Sprintf("node %s does not exist", a.NodeName)))
 		return
 	}
 

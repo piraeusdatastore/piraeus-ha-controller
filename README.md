@@ -51,8 +51,10 @@ You can directly set them through the helm chart using the matching `options` va
 
 The Piraeus High Availability Controller will monitor and manage any Pod that is attached to at least one DRBD resource.
 
-For the HA Controller to work properly, you need quorum, i.e. at least 3 replicas (or 2 replicas + 1 tie-breaker diskless).
-If using lower replica counts, attached Pods will be ignored and are not eligible for faster fail-over.
+When using volumes without quorum capabilities (less than 2 replicas + 1 tie-breaker or quorum manually disabled),
+the fast fail-over capabilities of the HA Controller will not be available.
+
+Other capabilities of the HA Controller will work with any DRBD resource and Pod.
 
 If you want to mark a Pod as exempt from management by the HA Controller, add the following annotation to the Pod:
 
