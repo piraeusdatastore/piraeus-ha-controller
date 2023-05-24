@@ -27,9 +27,12 @@ jobs:
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         run: |
           docker login --username=${DOCKER_USERNAME} --password-stdin quay.io <<< "${DOCKER_PASSWORD}"
+      - name: Set quay.io expiration
+        if: ${{ github.ref_type != 'tag' }}
+        run: echo "EXTRA_LABELS=quay.expires-after=2w" >> $GITHUB_ENV
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: |
             quay.io/piraeusdatastore/piraeus-ha-controller
@@ -37,10 +40,11 @@ jobs:
             type=sha
             type=ref,event=tag
             type=ref,event=pr
+          labels: ${{ env.EXTRA_LABELS }}
       - name: Set VERSION
         run: echo "VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
       - name: Build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v4
         with:
           builder: ${{ steps.buildx.outputs.name }}
           platforms: linux/amd64,linux/arm64
