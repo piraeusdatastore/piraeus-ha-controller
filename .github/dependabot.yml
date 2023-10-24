@@ -5,7 +5,7 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      ci:
+      gomod:
         patterns:
           - "*" # Include all go mod updates in one PR
   - package-ecosystem: github-actions
