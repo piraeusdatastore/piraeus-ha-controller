@@ -261,7 +261,7 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 
 		req, err := a.getRequestForDrbdResource(resource, now)
 		if err != nil {
-			klog.V(2).Infof("ignoring resource: %w", err)
+			klog.V(2).Infof("ignoring resource: %s", err)
 			continue
 		}
 
