@@ -1,6 +1,6 @@
 module github.com/piraeusdatastore/piraeus-ha-controller
 
-go 1.19
+go 1.21
 
 require (
 	github.com/piraeusdatastore/linstor-csi v1.3.0
