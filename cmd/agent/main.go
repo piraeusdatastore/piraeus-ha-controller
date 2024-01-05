@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	k8scli "k8s.io/component-base/cli"
+	"k8s.io/klog/v2"
 
 	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/agent"
 	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/metadata"
@@ -60,7 +61,11 @@ func NewAgentCommand() *cobra.Command {
 					ag.Healthz(writer)
 				})
 
-				go http.Serve(listener, mux)
+				go func() {
+					err := http.Serve(listener, mux)
+					klog.Errorf("error serving /healthz endpoint: %s", err)
+					cancel()
+				}()
 			}
 
 			return ag.Run(ctx)
