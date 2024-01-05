@@ -16,7 +16,7 @@ ARG TARGETOS
 ARG TARGETARCH
 RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-X github.com/piraeusdatastore/piraeus-ha-controller/pkg/metadata.Version=${VERSION} -extldflags=-static"  -v ./cmd/agent
 
-FROM debian:bullseye
+FROM debian:bookworm
 
 RUN <<EOF
   set -e
@@ -24,7 +24,7 @@ RUN <<EOF
   apt-get install -y wget ca-certificates gnupg
   { echo 'APT::Install-Recommends "false";' ; echo 'APT::Install-Suggests "false";' ; } > /etc/apt/apt.conf.d/99_piraeus
   wget -O- https://packages.linbit.com/package-signing-pubkey.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/linbit-keyring.gpg
-  echo "deb http://packages.linbit.com/public" bullseye "misc" > /etc/apt/sources.list.d/linbit.list
+  echo "deb http://packages.linbit.com/public" bookworm "misc" > /etc/apt/sources.list.d/linbit.list
   apt-get update
   apt-get install -y drbd-utils
   apt-get clean -y
