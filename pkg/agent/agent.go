@@ -117,6 +117,9 @@ func NewAgent(opt *Options) (*agent, error) {
 			return []string{fmt.Sprintf("%s/%s", obj.Spec.ClaimRef.Namespace, obj.Spec.ClaimRef.Name)}, nil
 		}),
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	klog.V(2).Info("setting up Pod informer")
 
@@ -297,7 +300,7 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 
 func (a *agent) Healthz(writer http.ResponseWriter) {
 	a.mu.Lock()
-	sinceLastReconcile := time.Now().Sub(a.lastReconcileStart)
+	sinceLastReconcile := time.Since(a.lastReconcileStart)
 	a.mu.Unlock()
 
 	if sinceLastReconcile > a.Timeout()+a.ReconcileInterval {
