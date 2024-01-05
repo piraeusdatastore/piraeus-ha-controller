@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2024-01-05
+
 ### Added
 
 - Option to assume connection names refer to a Pod instead of a Node.
@@ -118,7 +120,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.1.1...v1.1.2
