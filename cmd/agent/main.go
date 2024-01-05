@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	k8scli "k8s.io/component-base/cli"
 	"k8s.io/klog/v2"
@@ -20,7 +21,7 @@ func NewAgentCommand() *cobra.Command {
 	cfgflags := genericclioptions.NewConfigFlags(false)
 	var drbdStatusInterval, reconcileInterval, resyncInterval, operationsTimeout, failOverTimeout time.Duration
 	var deletionGraceSeconds int64
-	var nodeName, healthzBindAddress string
+	var nodeName, healthzBindAddress, satellitePodLabel string
 	var failOverUnsafePods bool
 
 	cmd := &cobra.Command{
@@ -35,16 +36,22 @@ func NewAgentCommand() *cobra.Command {
 				return err
 			}
 
+			selector, err := labels.Parse(satellitePodLabel)
+			if err != nil {
+				return err
+			}
+
 			ag, err := agent.NewAgent(&agent.Options{
-				RestConfig:         cfg,
-				DeletionGraceSec:   deletionGraceSeconds,
-				ReconcileInterval:  reconcileInterval,
-				ResyncInterval:     resyncInterval,
-				OperationTimeout:   operationsTimeout,
-				DrbdStatusInterval: drbdStatusInterval,
-				FailOverTimeout:    failOverTimeout,
-				NodeName:           nodeName,
-				FailOverUnsafePods: failOverUnsafePods,
+				RestConfig:           cfg,
+				DeletionGraceSec:     deletionGraceSeconds,
+				ReconcileInterval:    reconcileInterval,
+				ResyncInterval:       resyncInterval,
+				OperationTimeout:     operationsTimeout,
+				DrbdStatusInterval:   drbdStatusInterval,
+				FailOverTimeout:      failOverTimeout,
+				NodeName:             nodeName,
+				FailOverUnsafePods:   failOverUnsafePods,
+				SatellitePodSelector: selector,
 			})
 			if err != nil {
 				return err
@@ -81,6 +88,7 @@ func NewAgentCommand() *cobra.Command {
 	cmd.Flags().Int64Var(&deletionGraceSeconds, "grace-period-seconds", 10, "default grace period for deleting k8s objects, in seconds")
 	cmd.Flags().StringVar(&nodeName, "node-name", os.Getenv("NODE_NAME"), "the name of node this is running on. defaults to the NODE_NAME environment variable")
 	cmd.Flags().StringVar(&healthzBindAddress, "health-bind-address", ":8000", "the address to bind to for the /healthz endpoint")
+	cmd.Flags().StringVar(&satellitePodLabel, "satellite-pod-label", "app.kubernetes.io/component=linstor-satellite", "the connection name reported by DRBD is one of the Pods with this label")
 	cmd.Flags().BoolVar(&failOverUnsafePods, "fail-over-unsafe-pods", false, "fail over Pods that use storage with unknown fail over properties")
 	return cmd
 }
