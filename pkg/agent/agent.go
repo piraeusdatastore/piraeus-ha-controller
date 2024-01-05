@@ -18,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -49,6 +50,9 @@ type Options struct {
 	FailOverTimeout time.Duration
 	// FailOverUnsafePods indicates if Pods with unknown other volume types should be failed over as well.
 	FailOverUnsafePods bool
+	// SatellitePodSelector selects the Pods that should be considered LINSTOR Satellites.
+	// If the DRBD connection name matches on of these Pods, the Kubernetes Node name is taken from these Pods.
+	SatellitePodSelector labels.Selector
 }
 
 // Timeout returns the operations timeout.
@@ -81,6 +85,14 @@ type agent struct {
 	lastReconcileStart time.Time
 }
 
+const (
+	PersistentVolumeByResourceDefinitionIndex    = "pv-by-rd"
+	PersistentVolumeByPersistentVolumeClaimIndex = "pv-by-pvc"
+	PodByPersistentVolumeClaimIndex              = "pod-by-pvc"
+	SatellitePodIndex                            = "satellite-pod"
+	VolumeAttachmentByPersistentVolumeIndex      = "va-by-pv"
+)
+
 func NewAgent(opt *Options) (*agent, error) {
 	client, err := kubernetes.NewForConfig(opt.RestConfig)
 	if err != nil {
@@ -94,7 +106,7 @@ func NewAgent(opt *Options) (*agent, error) {
 	pvInformer := informerFactory.Core().V1().PersistentVolumes().Informer()
 
 	err = pvInformer.AddIndexers(map[string]cache.IndexFunc{
-		"rd": indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
+		PersistentVolumeByResourceDefinitionIndex: indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
 			if obj.Spec.CSI == nil {
 				return nil, nil
 			}
@@ -105,7 +117,7 @@ func NewAgent(opt *Options) (*agent, error) {
 
 			return []string{obj.Spec.CSI.VolumeHandle}, nil
 		}),
-		"pvc": indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
+		PersistentVolumeByPersistentVolumeClaimIndex: indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
 			if obj.Spec.ClaimRef == nil {
 				return nil, nil
 			}
@@ -126,7 +138,7 @@ func NewAgent(opt *Options) (*agent, error) {
 	podInformer := informerFactory.Core().V1().Pods().Informer()
 
 	err = podInformer.AddIndexers(map[string]cache.IndexFunc{
-		"pvc": indexers.Gen(func(obj *corev1.Pod) ([]string, error) {
+		PodByPersistentVolumeClaimIndex: indexers.Gen(func(obj *corev1.Pod) ([]string, error) {
 			var pvcs []string
 			for i := range obj.Spec.Volumes {
 				if obj.Spec.Volumes[i].PersistentVolumeClaim != nil {
@@ -134,6 +146,13 @@ func NewAgent(opt *Options) (*agent, error) {
 				}
 			}
 			return pvcs, nil
+		}),
+		SatellitePodIndex: indexers.Gen(func(obj *corev1.Pod) ([]string, error) {
+			if opt.SatellitePodSelector.Matches(labels.Set(obj.Labels)) {
+				return []string{obj.Name}, nil
+			}
+
+			return nil, nil
 		}),
 	})
 	if err != nil {
@@ -145,7 +164,7 @@ func NewAgent(opt *Options) (*agent, error) {
 	vaInformer := informerFactory.Storage().V1().VolumeAttachments().Informer()
 
 	err = vaInformer.AddIndexers(map[string]cache.IndexFunc{
-		"pv": indexers.Gen(func(obj *storagev1.VolumeAttachment) ([]string, error) {
+		VolumeAttachmentByPersistentVolumeIndex: indexers.Gen(func(obj *storagev1.VolumeAttachment) ([]string, error) {
 			if obj.Spec.Source.PersistentVolumeName != nil {
 				return []string{*obj.Spec.Source.PersistentVolumeName}, nil
 			}
@@ -264,6 +283,8 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 		resource := &resourceState[i]
 
 		klog.V(2).Infof("checking on resource %s", resource.Name)
+
+		a.replaceConnectionNames(resource)
 
 		req, err := a.getRequestForDrbdResource(resource, now)
 		if err != nil {
@@ -436,13 +457,46 @@ func (a *agent) ManageOwnTaints(ctx context.Context, resourceState []DrbdResourc
 	return nil
 }
 
+func (a *agent) replaceConnectionNames(res *DrbdResourceState) {
+	klog.V(4).InfoS("replacing connection names", "resource", res.Name)
+
+	for i := range res.Connections {
+		con := &res.Connections[i]
+
+		klog.V(4).InfoS("replacing connection name", "resource", res.Name, "connection", con.Name)
+		pods, err := indexers.List[corev1.Pod](a.podInformer.GetIndexer().ByIndex(SatellitePodIndex, con.Name))
+		if err != nil {
+			klog.V(2).ErrorS(err, "failed to fetch satellite Pods", "resource", res.Name, "connection", con.Name)
+			continue
+		}
+
+		switch len(pods) {
+		case 1:
+			if pods[0].Spec.NodeName == "" {
+				klog.V(2).InfoS("satellite pod has matching name but no node name (weird!)", "resource", res.Name, "connection", con.Name)
+				continue
+			}
+
+			con.Name = pods[0].Spec.NodeName
+		case 0:
+			klog.V(4).InfoS("no matching satellite pod, assume connection name is node name", "resource", res.Name, "connection", con.Name)
+		default:
+			klog.V(2).InfoS("multiple satellite pods are candidates (weird!)", "resource", res.Name, "connection", con.Name)
+		}
+
+		klog.V(4).InfoS("replaced connection name", "resource", res.Name, "connection", con.Name)
+	}
+
+	klog.V(4).InfoS("replaced connection names", "resource", res.Name)
+}
+
 // getRequestForDrbdResource creates a reconcile request for a specific DRBD resource, collecting all information:
 // * Matching PersistentVolume.
 // * Matching VolumeAttachments.
 // * Involved Nodes.
 // * Involved Pods.
 func (a *agent) getRequestForDrbdResource(res *DrbdResourceState, refTime time.Time) (*ReconcileRequest, error) {
-	pvs, err := indexers.List[corev1.PersistentVolume](a.pvInformer.GetIndexer().ByIndex("rd", res.Name))
+	pvs, err := indexers.List[corev1.PersistentVolume](a.pvInformer.GetIndexer().ByIndex(PersistentVolumeByResourceDefinitionIndex, res.Name))
 	if err != nil {
 		return nil, fmt.Errorf("error fetching persistent volume from store: %w", err)
 	}
@@ -456,7 +510,7 @@ func (a *agent) getRequestForDrbdResource(res *DrbdResourceState, refTime time.T
 		return nil, fmt.Errorf("multiple PVs found for resource '%s'", res.Name)
 	}
 
-	attachments, err := indexers.List[storagev1.VolumeAttachment](a.vaInformer.GetIndexer().ByIndex("pv", res.Name))
+	attachments, err := indexers.List[storagev1.VolumeAttachment](a.vaInformer.GetIndexer().ByIndex(VolumeAttachmentByPersistentVolumeIndex, res.Name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to access volume attachment information: %v", err)
 	}
@@ -469,7 +523,7 @@ func (a *agent) getRequestForDrbdResource(res *DrbdResourceState, refTime time.T
 	var attachedPods []*corev1.Pod
 	if hasPersistentVolumeClaimRef(pv) {
 		pvcName := fmt.Sprintf("%s/%s", pv.Spec.ClaimRef.Namespace, pv.Spec.ClaimRef.Name)
-		attachedPods, err = indexers.List[corev1.Pod](a.podInformer.GetIndexer().ByIndex("pvc", pvcName))
+		attachedPods, err = indexers.List[corev1.Pod](a.podInformer.GetIndexer().ByIndex(PodByPersistentVolumeClaimIndex, pvcName))
 		if err != nil {
 			return nil, fmt.Errorf("failed to access pod information: %v", err)
 		}

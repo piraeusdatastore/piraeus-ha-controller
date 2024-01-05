@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Option to assume connection names refer to a Pod instead of a Node.
+
 ## [1.1.4] - 2023-05-22
 
 ### Changed
