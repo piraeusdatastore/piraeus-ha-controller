@@ -183,7 +183,10 @@ func (a *agent) Run(ctx context.Context) error {
 
 	recorder := a.broadcaster.NewRecorder(scheme.Scheme, metadata.EventsReporter)
 
-	a.broadcaster.StartRecordingToSink(ctx.Done())
+	err := a.broadcaster.StartRecordingToSinkWithContext(ctx)
+	if err != nil {
+		return err
+	}
 	defer a.broadcaster.Shutdown()
 
 	klog.V(2).Info("setting up periodic reconciliation ticker")
