@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed detection of Persistent Volume Claims when deciding to fail over Pods.
+
 ## [1.2.0] - 2024-01-05
 
 ### Added

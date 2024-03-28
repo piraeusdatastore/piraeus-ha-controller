@@ -276,7 +276,7 @@ func (f *failoverReconciler) IsSafeVolume(vol *corev1.Volume, namespace string) 
 			return true
 		}
 
-		pvs, err := indexers.List[corev1.PersistentVolume](f.pvIndexer.ByIndex("pvc", fmt.Sprintf("%s/%s", namespace, vol.PersistentVolumeClaim.ClaimName)))
+		pvs, err := indexers.List[corev1.PersistentVolume](f.pvIndexer.ByIndex(PersistentVolumeByPersistentVolumeClaimIndex, fmt.Sprintf("%s/%s", namespace, vol.PersistentVolumeClaim.ClaimName)))
 		if err != nil {
 			return false
 		}
