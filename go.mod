@@ -8,7 +8,7 @@ require (
 	github.com/piraeusdatastore/linstor-csi v1.6.3
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/sync v0.7.0
+	golang.org/x/sync v0.8.0
 	k8s.io/api v0.30.3
 	k8s.io/apimachinery v0.30.3
 	k8s.io/cli-runtime v0.30.3
