@@ -65,7 +65,7 @@ func (f *forceIoErrorReconciler) RunForResource(ctx context.Context, req *Reconc
 		Key:       metadata.NodeForceIoErrorTaint,
 		Effect:    corev1.TaintEffectNoSchedule,
 		TimeAdded: &taintTime,
-	})
+	}, f.opt.DisableNodeTaints)
 	if err != nil {
 		return err
 	}
