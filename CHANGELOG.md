@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Filter Pod objects before storing in cache. This lowers memory usage of the HA Controller Pods.
+
 ## [1.2.1] - 2024-03-28
 
 ### Fixed
