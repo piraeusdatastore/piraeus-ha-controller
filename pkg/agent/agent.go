@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 
+	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/cleaners"
 	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/indexers"
 	"github.com/piraeusdatastore/piraeus-ha-controller/pkg/metadata"
 )
@@ -135,7 +136,14 @@ func NewAgent(opt *Options) (*agent, error) {
 
 	klog.V(2).Info("setting up Pod informer")
 
+	requirements, _ := opt.SatellitePodSelector.Requirements()
 	podInformer := informerFactory.Core().V1().Pods().Informer()
+	err = podInformer.SetTransform(func(o any) (any, error) {
+		return cleaners.CleanPod(o.(*corev1.Pod), requirements), nil
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	err = podInformer.AddIndexers(map[string]cache.IndexFunc{
 		PodByPersistentVolumeClaimIndex: indexers.Gen(func(obj *corev1.Pod) ([]string, error) {
