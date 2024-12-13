@@ -119,11 +119,7 @@ func NewAgent(opt *Options) (*agent, error) {
 			return []string{obj.Spec.CSI.VolumeHandle}, nil
 		}),
 		PersistentVolumeByPersistentVolumeClaimIndex: indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
-			if obj.Spec.ClaimRef == nil {
-				return nil, nil
-			}
-
-			if obj.Spec.ClaimRef.Kind != "PersistentVolumeClaim" {
+			if !hasPersistentVolumeClaimRef(obj) {
 				return nil, nil
 			}
 
@@ -556,11 +552,16 @@ func hasPersistentVolumeClaimRef(pv *corev1.PersistentVolume) bool {
 		return false
 	}
 
-	if pv.Spec.ClaimRef.APIVersion != "v1" || pv.Spec.ClaimRef.Kind != "PersistentVolumeClaim" {
+	switch {
+	case pv.Spec.ClaimRef.APIVersion == "v1" && pv.Spec.ClaimRef.Kind == "PersistentVolumeClaim":
+		return true
+	// When a volume is created with volume populators, they might not have APIVersion and Kind set.
+	// Assume empty fields still refer to a PersistentVolumeClaim.
+	case pv.Spec.ClaimRef.APIVersion == "" && pv.Spec.ClaimRef.Kind == "":
+		return true
+	default:
 		return false
 	}
-
-	return true
 }
 
 // TaintNode adds the specific taint to the node.
