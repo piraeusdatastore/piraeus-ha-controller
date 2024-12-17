@@ -43,6 +43,7 @@ The Piraeus High Availability Controller itself can be configured using the foll
 --request-timeout string           The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
 --resync-interval duration         how often the internal object cache should be resynchronized (default 5m0s)
 --v int32                          set log level (default 0)
+--disable-node-taints boolean      when set to true; node taints will not be applied (default false)
 ```
 
 You can directly set them through the helm chart using the matching `options` value.

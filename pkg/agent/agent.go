@@ -568,7 +568,7 @@ func hasPersistentVolumeClaimRef(pv *corev1.PersistentVolume) bool {
 
 // TaintNode adds the specific taint to the node.
 //
-// Returns false, nil if the taint was already present.
+// Returns false, nil if the taint was already present or applying node taints had been disabled.
 func TaintNode(ctx context.Context, client kubernetes.Interface, node *corev1.Node, taint corev1.Taint, disableNodeTaints bool) (bool, error) {
 	if disableNodeTaints || node == nil {
 		return false, nil
