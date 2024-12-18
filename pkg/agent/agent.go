@@ -445,6 +445,10 @@ func (a *agent) ManageOwnTaints(ctx context.Context, resourceState []DrbdResourc
 	if len(eventUpdates) != 0 {
 		klog.V(1).Info("updating node taints")
 
+		if a.Options.DisableNodeTaints {
+			updatedTaints = []corev1.Taint{}
+		}
+
 		// server-side apply updates would be nicer, but don't work in all situations.
 		// Adding taints works as expected, but removing taints controlled by this agent would also
 		// remove _all_ other existing taints. So we use a plain update instead.
