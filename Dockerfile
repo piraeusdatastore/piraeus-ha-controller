@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.4
-FROM --platform=$BUILDPLATFORM golang:1.22 as builder
+FROM --platform=$BUILDPLATFORM golang:1 as builder
 
 WORKDIR /src/
 COPY go.* /src/
