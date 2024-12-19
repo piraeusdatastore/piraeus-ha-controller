@@ -148,7 +148,7 @@ func (f *failoverReconciler) evictPods(ctx context.Context, res *DrbdResourceSta
 		Key:       metadata.NodeLostQuorumTaint,
 		Effect:    corev1.TaintEffectNoSchedule,
 		TimeAdded: &taintTime,
-	})
+	}, f.opt.DisableNodeTaints)
 	if err != nil {
 		return err
 	}

@@ -22,7 +22,7 @@ func NewAgentCommand() *cobra.Command {
 	var drbdStatusInterval, reconcileInterval, resyncInterval, operationsTimeout, failOverTimeout time.Duration
 	var deletionGraceSeconds int64
 	var nodeName, healthzBindAddress, satellitePodLabel string
-	var failOverUnsafePods bool
+	var failOverUnsafePods, disableNodeTaints bool
 
 	cmd := &cobra.Command{
 		Use:     "node-agent",
@@ -52,6 +52,7 @@ func NewAgentCommand() *cobra.Command {
 				NodeName:             nodeName,
 				FailOverUnsafePods:   failOverUnsafePods,
 				SatellitePodSelector: selector,
+				DisableNodeTaints:    disableNodeTaints,
 			})
 			if err != nil {
 				return err
@@ -90,6 +91,7 @@ func NewAgentCommand() *cobra.Command {
 	cmd.Flags().StringVar(&healthzBindAddress, "health-bind-address", ":8000", "the address to bind to for the /healthz endpoint")
 	cmd.Flags().StringVar(&satellitePodLabel, "satellite-pod-label", "app.kubernetes.io/component=linstor-satellite", "the connection name reported by DRBD is one of the Pods with this label")
 	cmd.Flags().BoolVar(&failOverUnsafePods, "fail-over-unsafe-pods", false, "fail over Pods that use storage with unknown fail over properties")
+	cmd.Flags().BoolVar(&disableNodeTaints, "disable-node-taints", false, "prevent nodes from being tainted")
 	return cmd
 }
 

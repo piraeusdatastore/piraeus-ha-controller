@@ -54,6 +54,8 @@ type Options struct {
 	// SatellitePodSelector selects the Pods that should be considered LINSTOR Satellites.
 	// If the DRBD connection name matches on of these Pods, the Kubernetes Node name is taken from these Pods.
 	SatellitePodSelector labels.Selector
+	// DisableNodeTaints prevents the nodes in a cluster from being tainted.
+	DisableNodeTaints bool
 }
 
 // Timeout returns the operations timeout.
@@ -360,6 +362,11 @@ func (a *agent) Healthz(writer http.ResponseWriter) {
 // * If all resources are in a good state, remove all taints.
 // * Add taints for DRBD resources that are forcing IO errors.
 func (a *agent) ManageOwnTaints(ctx context.Context, resourceState []DrbdResourceState, refTime time.Time, recorder events.EventRecorder) error {
+	if a.Options.DisableNodeTaints {
+		klog.V(4).InfoS("not updating node taints", "disableNodeTaints", a.Options.DisableNodeTaints)
+		return nil
+	}
+
 	allQuorum := true
 	anyForceIOError := false
 	for i := range resourceState {
@@ -566,9 +573,9 @@ func hasPersistentVolumeClaimRef(pv *corev1.PersistentVolume) bool {
 
 // TaintNode adds the specific taint to the node.
 //
-// Returns false, nil if the taint was already present.
-func TaintNode(ctx context.Context, client kubernetes.Interface, node *corev1.Node, taint corev1.Taint) (bool, error) {
-	if node == nil {
+// Returns false, nil if the taint was already present or applying node taints had been disabled.
+func TaintNode(ctx context.Context, client kubernetes.Interface, node *corev1.Node, taint corev1.Taint, disableNodeTaints bool) (bool, error) {
+	if disableNodeTaints || node == nil {
 		return false, nil
 	}
 
