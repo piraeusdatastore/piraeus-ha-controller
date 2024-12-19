@@ -362,6 +362,11 @@ func (a *agent) Healthz(writer http.ResponseWriter) {
 // * If all resources are in a good state, remove all taints.
 // * Add taints for DRBD resources that are forcing IO errors.
 func (a *agent) ManageOwnTaints(ctx context.Context, resourceState []DrbdResourceState, refTime time.Time, recorder events.EventRecorder) error {
+	if a.Options.DisableNodeTaints {
+		klog.V(4).InfoS("not updating node taints", "disableNodeTaints", a.Options.DisableNodeTaints)
+		return nil
+	}
+
 	allQuorum := true
 	anyForceIOError := false
 	for i := range resourceState {
@@ -444,10 +449,6 @@ func (a *agent) ManageOwnTaints(ctx context.Context, resourceState []DrbdResourc
 
 	if len(eventUpdates) != 0 {
 		klog.V(1).Info("updating node taints")
-
-		if a.Options.DisableNodeTaints {
-			updatedTaints = []corev1.Taint{}
-		}
 
 		// server-side apply updates would be nicer, but don't work in all situations.
 		// Adding taints works as expected, but removing taints controlled by this agent would also
