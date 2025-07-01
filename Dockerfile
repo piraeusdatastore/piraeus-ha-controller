@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.4
-FROM --platform=$BUILDPLATFORM golang:1 as builder
+FROM --platform=$BUILDPLATFORM golang:1.24.4 as builder
 
 WORKDIR /src/
 COPY go.* /src/
@@ -29,7 +29,7 @@ RUN <<EOF
   apt-get install -y drbd-utils
   apt-get clean -y
   rm -r /var/lib/apt/lists/* /etc/apt/sources.list.d/linbit.list
-  echo "global { usage-count no; } " > /etc/drbd.d/global_common.conf
+  echo "global { usage-count no; }" > /etc/drbd.d/global_common.conf
 EOF
 
 COPY --from=builder /src/agent /agent
