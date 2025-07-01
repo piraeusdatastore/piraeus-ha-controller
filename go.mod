@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.2
 
 require (
-	github.com/piraeusdatastore/linstor-csi v1.8.0
+	github.com/piraeusdatastore/linstor-csi v1.8.1
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.15.0
@@ -19,7 +19,7 @@ require (
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
-	github.com/LINBIT/golinstor v0.55.0 // indirect
+	github.com/LINBIT/golinstor v0.56.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
