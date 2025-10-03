@@ -14,12 +14,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@master
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: linux/amd64,linux/arm64
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@master
+        uses: docker/setup-buildx-action@v3
+      - name: Set up cosign
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: sigstore/cosign-installer@v3
       - name: login to registry
         if: ${{ github.event_name != 'pull_request' }}
         env:
@@ -45,6 +48,7 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
       - name: Build
         uses: docker/build-push-action@v6
+        id: build
         with:
           builder: ${{ steps.buildx.outputs.name }}
           platforms: linux/amd64,linux/arm64
@@ -55,3 +59,11 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             VERSION=${{ env.VERSION }}
+      - name: Sign images
+        if: ${{ github.event_name != 'pull_request' }}
+        # Take the digest we just pushed to the registry and sign the image using "keyless" signing:
+        #   https://docs.sigstore.dev/cosign/signing/overview/
+        # With this, users can verify that the image was actually created by this github workflow.
+        run: |
+          jq '."containerimage.digest" as $DIGEST | ."image.name" | split(":")[0] | "\(.)@\($DIGEST)"' -r <<<'${{ steps.build.outputs.metadata }}' \
+            | xargs --no-run-if-empty cosign sign --yes
