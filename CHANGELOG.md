@@ -6,9 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2025-10-22
+
+### Changed
+
+- Bump dependencies
+
 ## [1.3.0] - 2025-01-20
 
-## Added
+### Added
 
 - Option to disable node taints
 
