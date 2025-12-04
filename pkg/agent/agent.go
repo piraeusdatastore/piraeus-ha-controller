@@ -285,9 +285,7 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 		klog.V(2).Infof("Own node taints synced")
 	}()
 
-	for i := range resourceState {
-		resource := &resourceState[i]
-
+	for _, resource := range resourceState {
 		klog.V(2).Infof("checking on resource %s", resource.Name)
 
 		a.replaceConnectionNames(resource)
@@ -361,7 +359,7 @@ func (a *agent) Healthz(writer http.ResponseWriter) {
 // ManageOwnTaints ensures that the taints on the local node are up to date:
 // * If all resources are in a good state, remove all taints.
 // * Add taints for DRBD resources that are forcing IO errors.
-func (a *agent) ManageOwnTaints(ctx context.Context, resourceState []DrbdResourceState, refTime time.Time, recorder events.EventRecorder) error {
+func (a *agent) ManageOwnTaints(ctx context.Context, resources map[string]*DrbdResource, refTime time.Time, recorder events.EventRecorder) error {
 	if a.Options.DisableNodeTaints {
 		klog.V(4).InfoS("not updating node taints", "disableNodeTaints", a.Options.DisableNodeTaints)
 		return nil
@@ -369,14 +367,15 @@ func (a *agent) ManageOwnTaints(ctx context.Context, resourceState []DrbdResourc
 
 	allQuorum := true
 	anyForceIOError := false
-	for i := range resourceState {
-		if resourceState[i].ForceIoFailures {
+	for _, resource := range resources {
+		if resource.State.ForceIoFailures {
 			anyForceIOError = true
 		}
 
-		for j := range resourceState[i].Devices {
-			if !resourceState[i].Devices[j].Quorum {
+		for j := range resource.State.Devices {
+			if resource.Config.Options.Quorum == QuorumMajority && !resource.State.Devices[j].Quorum {
 				allQuorum = false
+				break
 			}
 		}
 	}
@@ -468,11 +467,11 @@ func (a *agent) ManageOwnTaints(ctx context.Context, resourceState []DrbdResourc
 	return nil
 }
 
-func (a *agent) replaceConnectionNames(res *DrbdResourceState) {
+func (a *agent) replaceConnectionNames(res *DrbdResource) {
 	klog.V(4).InfoS("replacing connection names", "resource", res.Name)
 
-	for i := range res.Connections {
-		con := &res.Connections[i]
+	for i := range res.State.Connections {
+		con := &res.State.Connections[i]
 
 		klog.V(4).InfoS("replacing connection name", "resource", res.Name, "connection", con.Name)
 		pods, err := indexers.List[corev1.Pod](a.podInformer.GetIndexer().ByIndex(SatellitePodIndex, con.Name))
@@ -506,7 +505,7 @@ func (a *agent) replaceConnectionNames(res *DrbdResourceState) {
 // * Matching VolumeAttachments.
 // * Involved Nodes.
 // * Involved Pods.
-func (a *agent) getRequestForDrbdResource(res *DrbdResourceState, refTime time.Time) (*ReconcileRequest, error) {
+func (a *agent) getRequestForDrbdResource(res *DrbdResource, refTime time.Time) (*ReconcileRequest, error) {
 	pvs, err := indexers.List[corev1.PersistentVolume](a.pvInformer.GetIndexer().ByIndex(PersistentVolumeByResourceDefinitionIndex, res.Name))
 	if err != nil {
 		return nil, fmt.Errorf("error fetching persistent volume from store: %w", err)

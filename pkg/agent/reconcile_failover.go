@@ -55,12 +55,17 @@ func NewFailoverReconciler(opt *Options, client kubernetes.Interface, pvIndexer 
 func (f *failoverReconciler) RunForResource(ctx context.Context, req *ReconcileRequest, recorder events.EventRecorder) error {
 	klog.V(3).Infof("check if resource '%s' is promotable, triggering fail-over if required", req.Resource.Name)
 
-	if !req.Resource.MayPromote() {
+	if !req.Resource.State.MayPromote() {
 		klog.V(4).Infof("resource '%s' is not promotable", req.Resource.Name)
 
 		f.mu.Lock()
 		delete(f.drbdFailedAt, req.Resource.Name)
 		f.mu.Unlock()
+		return nil
+	}
+
+	if req.Resource.Config.Options.Quorum != QuorumMajority {
+		klog.V(4).Infof("resource '%s' has no quorum '%s' configuration", req.Resource.Name, QuorumMajority)
 		return nil
 	}
 
@@ -74,7 +79,7 @@ func (f *failoverReconciler) RunForResource(ctx context.Context, req *ReconcileR
 		return nil
 	}
 
-	for _, conn := range req.Resource.Connections {
+	for _, conn := range req.Resource.State.Connections {
 		f.reconcileConnection(ctx, req, conn, recorder)
 	}
 
@@ -136,7 +141,7 @@ func (f *failoverReconciler) reconcileConnection(ctx context.Context, req *Recon
 
 	klog.V(1).Infof("resource '%s' on node '%s' has failed, evicting", req.Resource.Name, conn.Name)
 
-	err := f.evictPods(ctx, req.Resource, req.Volume, runningNodePods, va, node, req.RefTime, recorder)
+	err := f.evictPods(ctx, &req.Resource.State, req.Volume, runningNodePods, va, node, req.RefTime, recorder)
 	if err != nil {
 		klog.V(1).ErrorS(err, "failed to fail-over resource")
 	}
