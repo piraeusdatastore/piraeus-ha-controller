@@ -34,12 +34,12 @@ func NewSuspendedPodReconciler(opt *Options) Reconciler {
 func (s *suspendedPodReconciler) RunForResource(ctx context.Context, req *ReconcileRequest, recorder events.EventRecorder) error {
 	klog.V(3).Infof("checking if resource needs to be forced to become secondary")
 
-	if !req.Resource.Suspended {
+	if !req.Resource.State.Suspended {
 		klog.V(4).Infof("resource '%s' not suspended", req.Resource.Name)
 		return nil
 	}
 
-	if !req.Resource.Primary() {
+	if !req.Resource.State.Primary() {
 		klog.V(4).Infof("resource '%s' not primary", req.Resource.Name)
 		return nil
 	}

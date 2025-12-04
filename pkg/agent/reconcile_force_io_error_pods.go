@@ -37,7 +37,7 @@ func NewForceIoErrorReconciler(opt *Options, client kubernetes.Interface) Reconc
 }
 
 func (f *forceIoErrorReconciler) RunForResource(ctx context.Context, req *ReconcileRequest, recorder events.EventRecorder) error {
-	if !req.Resource.ForceIoFailures {
+	if !req.Resource.State.ForceIoFailures {
 		klog.V(4).Infof("resource '%s' is not forcing io-errors", req.Resource.Name)
 		return nil
 	}

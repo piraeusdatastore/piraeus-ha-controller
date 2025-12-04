@@ -11,7 +11,7 @@ import (
 
 type ReconcileRequest struct {
 	RefTime     time.Time
-	Resource    *DrbdResourceState
+	Resource    *DrbdResource
 	Volume      *corev1.PersistentVolume
 	Pods        []*corev1.Pod
 	Attachments []*storagev1.VolumeAttachment
