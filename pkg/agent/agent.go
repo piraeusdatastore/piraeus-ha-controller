@@ -372,10 +372,12 @@ func (a *agent) ManageOwnTaints(ctx context.Context, resources map[string]*DrbdR
 			anyForceIOError = true
 		}
 
-		for j := range resource.State.Devices {
-			if resource.Config.Options.Quorum == QuorumMajority && !resource.State.Devices[j].Quorum {
-				allQuorum = false
-				break
+		if allQuorum {
+			for j := range resource.State.Devices {
+				if resource.Config.Options.Quorum == QuorumMajority && !resource.State.Devices[j].Quorum {
+					allQuorum = false
+					break
+				}
 			}
 		}
 	}
