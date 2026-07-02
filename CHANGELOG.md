@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Do not force-demote a DRBD resource whose IO is suspended by explicit user action (for example while a
+  snapshot is taken). Only involuntary suspensions trigger the forced demotion now.
+
 ## [1.3.2] - 2025-12-05
 
 ### Changed
