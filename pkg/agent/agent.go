@@ -15,6 +15,7 @@ import (
 	"time"
 
 	csilinstor "github.com/piraeusdatastore/linstor-csi/pkg/linstor"
+	"github.com/piraeusdatastore/linstor-csi/pkg/volume"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -96,6 +97,11 @@ const (
 	VolumeAttachmentByPersistentVolumeIndex      = "va-by-pv"
 )
 
+// NfsExportVolumeAttribute is the CSI volume attribute linstor-csi sets on PersistentVolumes backing an NFS export.
+// Such volumes have their high availability managed internally by drbd-reactor, so the HA controller must not
+// touch the DRBD resource itself (no fail-over, no forced demotion, no IO-error eviction, no node taints).
+const NfsExportVolumeAttribute = csilinstor.ParameterNamespace + "/nfs-export"
+
 func NewAgent(opt *Options) (*agent, error) {
 	client, err := kubernetes.NewForConfig(opt.RestConfig)
 	if err != nil {
@@ -109,17 +115,7 @@ func NewAgent(opt *Options) (*agent, error) {
 	pvInformer := informerFactory.Core().V1().PersistentVolumes().Informer()
 
 	err = pvInformer.AddIndexers(map[string]cache.IndexFunc{
-		PersistentVolumeByResourceDefinitionIndex: indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
-			if obj.Spec.CSI == nil {
-				return nil, nil
-			}
-
-			if obj.Spec.CSI.Driver != csilinstor.DriverName {
-				return nil, nil
-			}
-
-			return []string{obj.Spec.CSI.VolumeHandle}, nil
-		}),
+		PersistentVolumeByResourceDefinitionIndex: indexers.Gen(persistentVolumeResourceDefinitions),
 		PersistentVolumeByPersistentVolumeClaimIndex: indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
 			if !hasPersistentVolumeClaimRef(obj) {
 				return nil, nil
@@ -265,6 +261,15 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 	a.mu.Unlock()
 
 	resourceState := a.drbdResources.Get()
+
+	// NFS exports are managed by drbd-reactor internally, so drop them before doing anything else: the HA
+	// controller must not interfere with their DRBD resources.
+	for name := range resourceState {
+		if a.isNfsExport(name) {
+			klog.V(3).Infof("resource '%s' is a LINSTOR CSI NFS export managed by drbd-reactor, skipping", name)
+			delete(resourceState, name)
+		}
+	}
 
 	var wg sync.WaitGroup
 
@@ -549,6 +554,57 @@ func (a *agent) getRequestForDrbdResource(res *DrbdResource, refTime time.Time) 
 		Attachments: attachments,
 		Nodes:       nodes,
 	}, nil
+}
+
+// persistentVolumeResourceDefinitions returns the DRBD resource name backing the PersistentVolume, as reported by
+// "drbdsetup status". Only LINSTOR CSI volumes are indexed. The CSI volume handle may address a single volume
+// within a resource (as "<resource>/<volume-number>"), so it is parsed down to the resource name.
+func persistentVolumeResourceDefinitions(obj *corev1.PersistentVolume) ([]string, error) {
+	if obj.Spec.CSI == nil {
+		return nil, nil
+	}
+
+	if obj.Spec.CSI.Driver != csilinstor.DriverName {
+		return nil, nil
+	}
+
+	id, err := volume.ParseVolumeId(obj.Spec.CSI.VolumeHandle)
+	if err != nil {
+		klog.V(2).ErrorS(err, "failed to parse volume handle", "volumeHandle", obj.Spec.CSI.VolumeHandle)
+		return nil, nil
+	}
+
+	return []string{id.ResourceName}, nil
+}
+
+// isNfsExport reports whether the DRBD resource backs a LINSTOR CSI NFS export.
+//
+// Such resources are identified by the NfsExportVolumeAttribute on their PersistentVolume. A single resource may
+// hold multiple volumes (and thus multiple PersistentVolumes); the resource is left to drbd-reactor if any of them
+// is an NFS export.
+func (a *agent) isNfsExport(resourceName string) bool {
+	pvs, err := indexers.List[corev1.PersistentVolume](a.pvInformer.GetIndexer().ByIndex(PersistentVolumeByResourceDefinitionIndex, resourceName))
+	if err != nil {
+		return false
+	}
+
+	for _, pv := range pvs {
+		if IsNfsExportVolume(pv) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsNfsExportVolume reports whether the PersistentVolume backs a LINSTOR CSI NFS export.
+func IsNfsExportVolume(pv *corev1.PersistentVolume) bool {
+	if pv == nil || pv.Spec.CSI == nil {
+		return false
+	}
+
+	_, ok := pv.Spec.CSI.VolumeAttributes[NfsExportVolumeAttribute]
+	return ok
 }
 
 func hasPersistentVolumeClaimRef(pv *corev1.PersistentVolume) bool {
