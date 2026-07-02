@@ -147,6 +147,7 @@ type DrbdResourceState struct {
 	Name            string           `json:"name"`
 	Role            string           `json:"role"`
 	Suspended       bool             `json:"suspended"`
+	SuspendedUser   bool             `json:"suspended-user"`
 	ForceIoFailures bool             `json:"force-io-failures"`
 	Devices         []DrbdDevice     `json:"devices"`
 	Connections     []DrbdConnection `json:"connections"`
