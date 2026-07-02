@@ -25,6 +25,10 @@ var _ Reconciler = &suspendedPodReconciler{}
 // to resume, one can force DRBD to report IO errors instead. The reconciler does just that if a local Pod should
 // be stopped while it is suspended by DRBD. This enables a (relatively) clean shutdown of the resource without
 // node reboot.
+//
+// IO suspensions that were requested explicitly by a user (for example while a snapshot is taken) are ignored:
+// these are controlled, temporary suspensions that resume on their own, so forcing the resource to secondary
+// would needlessly interrupt them.
 func NewSuspendedPodReconciler(opt *Options) Reconciler {
 	return &suspendedPodReconciler{
 		opt: opt,
@@ -36,6 +40,11 @@ func (s *suspendedPodReconciler) RunForResource(ctx context.Context, req *Reconc
 
 	if !req.Resource.State.Suspended {
 		klog.V(4).Infof("resource '%s' not suspended", req.Resource.Name)
+		return nil
+	}
+
+	if req.Resource.State.SuspendedUser {
+		klog.V(4).Infof("resource '%s' suspended by explicit user action (e.g. snapshot), not forcing demotion", req.Resource.Name)
 		return nil
 	}
 

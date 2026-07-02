@@ -24,3 +24,21 @@ func TestUnmarshalDrbdResourceState(t *testing.T) {
 		},
 	}, result)
 }
+
+func TestUnmarshalDrbdResourceStateSuspendedUser(t *testing.T) {
+	source := `[{"name":"snapshotted","node-id":0,"role":"Primary","suspended":true,"suspended-user":true,"suspended-no-data":false,"suspended-fencing":false,"suspended-quorum":false,"force-io-failures":false,"devices":[],"connections":[]}]`
+
+	var result []agent.DrbdResourceState
+	err := json.Unmarshal([]byte(source), &result)
+	assert.NoError(t, err)
+	assert.Equal(t, []agent.DrbdResourceState{
+		{
+			Name:          "snapshotted",
+			Role:          "Primary",
+			Suspended:     true,
+			SuspendedUser: true,
+			Devices:       []agent.DrbdDevice{},
+			Connections:   []agent.DrbdConnection{},
+		},
+	}, result)
+}
