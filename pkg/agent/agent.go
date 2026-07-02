@@ -96,6 +96,11 @@ const (
 	VolumeAttachmentByPersistentVolumeIndex      = "va-by-pv"
 )
 
+// NfsExportVolumeAttribute is the CSI volume attribute linstor-csi sets on PersistentVolumes backing an NFS export.
+// Such volumes have their high availability managed internally by drbd-reactor, so the HA controller must not
+// touch the DRBD resource itself (no fail-over, no forced demotion, no IO-error eviction, no node taints).
+const NfsExportVolumeAttribute = csilinstor.ParameterNamespace + "/nfs-export"
+
 func NewAgent(opt *Options) (*agent, error) {
 	client, err := kubernetes.NewForConfig(opt.RestConfig)
 	if err != nil {
@@ -265,6 +270,15 @@ func (a *agent) reconcile(ctx context.Context, recorder events.EventRecorder) er
 	a.mu.Unlock()
 
 	resourceState := a.drbdResources.Get()
+
+	// NFS exports are managed by drbd-reactor internally, so drop them before doing anything else: the HA
+	// controller must not interfere with their DRBD resources.
+	for name := range resourceState {
+		if a.isNfsExport(name) {
+			klog.V(3).Infof("resource '%s' is a LINSTOR CSI NFS export managed by drbd-reactor, skipping", name)
+			delete(resourceState, name)
+		}
+	}
 
 	var wg sync.WaitGroup
 
@@ -549,6 +563,36 @@ func (a *agent) getRequestForDrbdResource(res *DrbdResource, refTime time.Time) 
 		Attachments: attachments,
 		Nodes:       nodes,
 	}, nil
+}
+
+// isNfsExport reports whether the DRBD resource backs a LINSTOR CSI NFS export.
+//
+// Such resources are identified by the NfsExportVolumeAttribute on their PersistentVolume. A single resource may
+// hold multiple volumes (and thus multiple PersistentVolumes); the resource is left to drbd-reactor if any of them
+// is an NFS export.
+func (a *agent) isNfsExport(resourceName string) bool {
+	pvs, err := indexers.List[corev1.PersistentVolume](a.pvInformer.GetIndexer().ByIndex(PersistentVolumeByResourceDefinitionIndex, resourceName))
+	if err != nil {
+		return false
+	}
+
+	for _, pv := range pvs {
+		if IsNfsExportVolume(pv) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsNfsExportVolume reports whether the PersistentVolume backs a LINSTOR CSI NFS export.
+func IsNfsExportVolume(pv *corev1.PersistentVolume) bool {
+	if pv == nil || pv.Spec.CSI == nil {
+		return false
+	}
+
+	_, ok := pv.Spec.CSI.VolumeAttributes[NfsExportVolumeAttribute]
+	return ok
 }
 
 func hasPersistentVolumeClaimRef(pv *corev1.PersistentVolume) bool {
