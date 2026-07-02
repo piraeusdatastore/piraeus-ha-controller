@@ -15,6 +15,7 @@ import (
 	"time"
 
 	csilinstor "github.com/piraeusdatastore/linstor-csi/pkg/linstor"
+	"github.com/piraeusdatastore/linstor-csi/pkg/volume"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -114,17 +115,7 @@ func NewAgent(opt *Options) (*agent, error) {
 	pvInformer := informerFactory.Core().V1().PersistentVolumes().Informer()
 
 	err = pvInformer.AddIndexers(map[string]cache.IndexFunc{
-		PersistentVolumeByResourceDefinitionIndex: indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
-			if obj.Spec.CSI == nil {
-				return nil, nil
-			}
-
-			if obj.Spec.CSI.Driver != csilinstor.DriverName {
-				return nil, nil
-			}
-
-			return []string{obj.Spec.CSI.VolumeHandle}, nil
-		}),
+		PersistentVolumeByResourceDefinitionIndex: indexers.Gen(persistentVolumeResourceDefinitions),
 		PersistentVolumeByPersistentVolumeClaimIndex: indexers.Gen(func(obj *corev1.PersistentVolume) ([]string, error) {
 			if !hasPersistentVolumeClaimRef(obj) {
 				return nil, nil
@@ -563,6 +554,27 @@ func (a *agent) getRequestForDrbdResource(res *DrbdResource, refTime time.Time) 
 		Attachments: attachments,
 		Nodes:       nodes,
 	}, nil
+}
+
+// persistentVolumeResourceDefinitions returns the DRBD resource name backing the PersistentVolume, as reported by
+// "drbdsetup status". Only LINSTOR CSI volumes are indexed. The CSI volume handle may address a single volume
+// within a resource (as "<resource>/<volume-number>"), so it is parsed down to the resource name.
+func persistentVolumeResourceDefinitions(obj *corev1.PersistentVolume) ([]string, error) {
+	if obj.Spec.CSI == nil {
+		return nil, nil
+	}
+
+	if obj.Spec.CSI.Driver != csilinstor.DriverName {
+		return nil, nil
+	}
+
+	id, err := volume.ParseVolumeId(obj.Spec.CSI.VolumeHandle)
+	if err != nil {
+		klog.V(2).ErrorS(err, "failed to parse volume handle", "volumeHandle", obj.Spec.CSI.VolumeHandle)
+		return nil, nil
+	}
+
+	return []string{id.ResourceName}, nil
 }
 
 // isNfsExport reports whether the DRBD resource backs a LINSTOR CSI NFS export.
