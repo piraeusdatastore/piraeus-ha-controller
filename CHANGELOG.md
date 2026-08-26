@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Only taint the local node after a resource stayed without quorum for the fail-over timeout. Freshly
+  created resources briefly report no quorum before their first connection, which caused the taint to be
+  added and immediately removed again.
+
 ## [1.3.3] - 2026-07-08
 
 ### Fixed
