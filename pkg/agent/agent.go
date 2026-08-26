@@ -87,6 +87,10 @@ type agent struct {
 
 	mu                 sync.Mutex
 	lastReconcileStart time.Time
+
+	// noQuorumSince tracks when a resource was first seen without quorum.
+	// Only accessed from ManageOwnTaints, which never runs concurrently.
+	noQuorumSince map[string]time.Time
 }
 
 const (
@@ -190,6 +194,7 @@ func NewAgent(opt *Options) (*agent, error) {
 		client:          client,
 		broadcaster:     broadcaster,
 		Options:         opt,
+		noQuorumSince:   make(map[string]time.Time),
 		reconcilers: []Reconciler{
 			NewFailoverReconciler(opt, client, pvInformer.GetIndexer()),
 			NewSuspendedPodReconciler(opt),
@@ -364,6 +369,9 @@ func (a *agent) Healthz(writer http.ResponseWriter) {
 // ManageOwnTaints ensures that the taints on the local node are up to date:
 // * If all resources are in a good state, remove all taints.
 // * Add taints for DRBD resources that are forcing IO errors.
+// A resource only counts as having lost quorum after it stayed in that state
+// for the fail-over timeout, so fresh resources that have yet to connect do
+// not cause the taint to be added and immediately removed again.
 func (a *agent) ManageOwnTaints(ctx context.Context, resources map[string]*DrbdResource, refTime time.Time, recorder events.EventRecorder) error {
 	if a.Options.DisableNodeTaints {
 		klog.V(4).InfoS("not updating node taints", "disableNodeTaints", a.Options.DisableNodeTaints)
@@ -377,13 +385,28 @@ func (a *agent) ManageOwnTaints(ctx context.Context, resources map[string]*DrbdR
 			anyForceIOError = true
 		}
 
-		if allQuorum {
-			for j := range resource.State.Devices {
-				if resource.Config.Options.Quorum == QuorumMajority && !resource.State.Devices[j].Quorum {
-					allQuorum = false
-					break
-				}
-			}
+		if resource.Config.Options.Quorum != QuorumMajority || resource.State.HasQuorum() {
+			delete(a.noQuorumSince, resource.Name)
+			continue
+		}
+
+		noQuorumSince, ok := a.noQuorumSince[resource.Name]
+		if !ok {
+			a.noQuorumSince[resource.Name] = refTime
+			noQuorumSince = refTime
+		}
+
+		if noQuorumSince.Add(a.FailOverTimeout).After(refTime) {
+			klog.V(3).Infof("resource '%s' without quorum has not reached fail-over timeout, ignoring", resource.Name)
+			continue
+		}
+
+		allQuorum = false
+	}
+
+	for name := range a.noQuorumSince {
+		if _, ok := resources[name]; !ok {
+			delete(a.noQuorumSince, name)
 		}
 	}
 
