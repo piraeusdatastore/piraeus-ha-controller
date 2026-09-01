@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-09-01
+
 ### Fixed
 
 - Only taint the local node after a resource stayed without quorum for the fail-over timeout. Freshly
@@ -171,7 +173,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment example
 - README with motivating example
 
-[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.3.3...HEAD
+[Unreleased]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.3.4...HEAD
+[1.3.4]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/piraeusdatastore/piraeus-ha-controller/compare/v1.3.0...v1.3.1
